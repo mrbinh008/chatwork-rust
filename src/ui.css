@@ -154,7 +154,6 @@
 #thk-toolkit-panel .thk-file-controls input { flex:1; margin:0!important; }
 .thk-file-filters { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 10px; }
 .thk-file-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--thk-border); }
-.thk-file-icon { display:inline-flex; align-items:center; justify-content:center; flex:0 0 42px; width:42px; height:42px; overflow:hidden; border:1px solid var(--thk-border); border-radius:5px; background:var(--thk-panel); color:var(--thk-muted); font:600 10px/1 system-ui; }
 .thk-file-thumbnail { width:100%; height:100%; object-fit:cover; }
 .thk-file-details { display:flex; flex:1; flex-direction:column; gap:3px; min-width:0; }
 .thk-file-name { font-size:13px; font-weight:600; overflow-wrap:anywhere; }

@@ -602,17 +602,21 @@
         rootOpt.value = '';
         parentSelect.appendChild(rootOpt);
 
-        function flattenFolders(list, prefix = '') {
+        let currentParentId = '';
+        function flattenFolders(list, prefix = '', containingFolderId = '') {
             list.forEach(f => {
-                if (folderToEdit && f.id === folderToEdit.id) return;
+                if (folderToEdit && f.id === folderToEdit.id) {
+                    currentParentId = containingFolderId;
+                    return;
+                }
                 const opt = element('option', '', prefix + '📁 ' + f.name);
                 opt.value = f.id;
                 parentSelect.appendChild(opt);
-                if (f.children?.length) flattenFolders(f.children, prefix + '— ');
+                if (f.children?.length) flattenFolders(f.children, prefix + '— ', f.id);
             });
         }
         flattenFolders(tree);
-        if (parentId) parentSelect.value = parentId;
+        parentSelect.value = parentId || currentParentId;
         parentLabel.appendChild(parentSelect);
         view.body.appendChild(parentLabel);
 
@@ -672,9 +676,13 @@
                     if (item.id === targetParentId) {
                         item.children = item.children || [];
                         item.children.push(nodeToInsert);
+                        item.collapsed = false;
                         return true;
                     }
-                    if (item.children && insertNode(item.children, targetParentId, nodeToInsert)) return true;
+                    if (item.children && insertNode(item.children, targetParentId, nodeToInsert)) {
+                        item.collapsed = false;
+                        return true;
+                    }
                 }
                 return false;
             }

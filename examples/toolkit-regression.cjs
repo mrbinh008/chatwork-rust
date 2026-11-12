@@ -52,6 +52,7 @@ console.log('Toolkit language, membership and PR regression checks passed.');
 class UIEvent {
     constructor(type, options={}) { this.type=type; Object.assign(this, options); }
     preventDefault() { this.defaultPrevented=true; }
+    stopPropagation() {}
     stopImmediatePropagation() {}
 }
 class ClassList {
@@ -60,15 +61,21 @@ class ClassList {
     add(name) { this.toggle(name,true); } remove(name) { this.toggle(name,false); }
     contains(name) { return this.node.className.split(/\s+/).includes(name); }
 }
+class UIStyle {
+    getPropertyValue(key) { return this[key] || ''; }
+    setProperty(key, value) { this[key] = value; }
+    removeProperty(key) { delete this[key]; }
+}
 let uiDocument;
 class UINode {
-    constructor(tag, text='') { this.tagName=tag.toUpperCase(); this.children=[]; this.parentNode=null; this.className=''; this.classList=new ClassList(this); this.attrs={}; this.listeners={}; this.value=''; this.nodeValue=text; this.hidden=false; this.disabled=false; }
+    constructor(tag, text='') { this.tagName=tag.toUpperCase(); this.children=[]; this.parentNode=null; this.className=''; this.classList=new ClassList(this); this.attrs={}; this.listeners={}; this.value=''; this.nodeValue=text; this.hidden=false; this.disabled=false; this.style=new UIStyle(); this.dataset={}; }
     set textContent(value) { this.children=[]; this.nodeValue=''; if(String(value))this.appendChild(new UINode('#text',String(value))); }
     get textContent() { return this.tagName==='#TEXT'?this.nodeValue:this.children.map(node=>node.textContent).join(''); }
     get parentElement() { return this.parentNode; }
     get isConnected() { return this===uiDocument?.documentElement||!!this.parentNode?.isConnected; }
     replaceChildren(...nodes) { for(const node of this.children)node.parentNode=null;this.children=[];this.append(...nodes); }
     appendChild(node) { node.remove(); this.children.push(node); node.parentNode=this; return node; }
+    insertBefore(node, reference) { node.remove(); this.children.splice(this.children.indexOf(reference),0,node); node.parentNode=this; return node; }
     append(...nodes) { nodes.forEach(node=>this.appendChild(node)); }
     prepend(node) { node.remove(); this.children.unshift(node);node.parentNode=this; }
     replaceChildren(...nodes) { this.children.forEach(node=>node.parentNode=null);this.children=[];this.append(...nodes); }
@@ -170,5 +177,55 @@ assert.ok(thkFolder, 'THK folder was created');
 assert.equal(thkFolder.children[0].name, 'Frontend');
 assert.ok(thkFolder.children[0].rooms.includes('101'));
 assert.ok(thkFolder.children[0].rooms.includes('102'));
+
+// Exercise the actual add/edit dialogs through the sidebar controls.
+const sidebar = new UINode('div'); sidebar.id = '_roomListArea'; uiDocument.body.append(sidebar);
+const toolkit = uiWindow.__thkToolkit;
+toolkit.saveRoomTree([{id:'parent',name:'Parent',collapsed:true,rooms:[],children:[]}]);
+toolkit.mountRoomTree(true);
+function folderRow(name) {
+    return uiDocument.getElementById('thk-room-tree-panel').querySelectorAll('.thk-tree-node')
+        .map(node=>node.children[0]).find(row=>row.querySelector('.thk-tree-label').textContent.trim().endsWith(name));
+}
+function folderTool(name, index) { folderRow(name).querySelectorAll('.thk-tree-tool-btn')[index].click(); }
+function saveFolder(name) {
+    const modal = uiDocument.getElementById('thk-toolkit-panel');
+    modal.querySelector('input').value = name;
+    modal.querySelector('.thk-btn-primary').click();
+    assert.equal(uiDocument.getElementById('thk-toolkit-panel'), null);
+}
+folderTool('Parent', 0);
+assert.equal(uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value, 'parent');
+saveFolder('Child');
+let savedTree = toolkit.getRoomTree();
+assert.equal(savedTree.length, 1, 'Adding a child does not create another root');
+assert.equal(savedTree[0].children[0].name, 'Child');
+assert.equal(savedTree[0].collapsed, false, 'Creating a child expands its parent');
+assert.ok(folderRow('Child'), 'New child is visible immediately');
+folderTool('Child', 0); saveFolder('Grandchild');
+savedTree = toolkit.getRoomTree();
+const childId = savedTree[0].children[0].id;
+const grandchildId = savedTree[0].children[0].children[0].id;
+assert.equal(savedTree[0].children[0].children[0].name, 'Grandchild');
+folderTool('Child', 1);
+let folderDialog = uiDocument.getElementById('thk-toolkit-panel');
+assert.equal(folderDialog.querySelector('select').value, 'parent', 'Editing retains the existing parent');
+assert.ok(!folderDialog.querySelectorAll('option').some(option=>[childId,grandchildId].includes(option.value)), 'Cannot move a folder into itself or its descendants');
+saveFolder('Renamed child');
+savedTree = toolkit.getRoomTree();
+assert.equal(savedTree.length, 1);
+assert.equal(savedTree[0].children[0].name, 'Renamed child');
+assert.equal(savedTree[0].children[0].children[0].id, grandchildId, 'Renaming preserves the subtree');
+folderTool('Grandchild', 1);
+assert.equal(uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value, childId, 'Parent is retained at deeper levels');
+uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value = '';
+saveFolder('Moved to root');
+savedTree = toolkit.getRoomTree();
+assert.equal(savedTree.length, 2, 'Explicitly selecting root still moves the folder');
+assert.equal(savedTree[0].children[0].children.length, 0);
+folderTool('Moved to root', 1);
+uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value = childId;
+saveFolder('Moved back');
+assert.equal(toolkit.getRoomTree()[0].children[0].children[0].name, 'Moved back');
 
 console.log('Toolkit dialog, toolbar visibility, custom shortkeys and room tree checks passed.');

@@ -1,4 +1,4 @@
-# Build the current source for Apple Silicon and Intel using Docker.
+# Build the legacy Rust macOS host. Swift/AppKit requires a Mac or macOS CI runner.
 param([switch]$RebuildBuilder)
 $ErrorActionPreference = 'Stop'
 $ScriptDir = $PSScriptRoot
@@ -27,6 +27,6 @@ $ErrorActionPreference = 'Continue'
 $imageExists = $LASTEXITCODE -eq 0
 $ErrorActionPreference = 'Stop'
 if ($RebuildBuilder -or -not $imageExists) { Invoke-Docker @('build', '-t', 'mac-builder', '-f', (Join-Path $ScriptDir 'Dockerfile.mac-builder'), $ScriptDir) }
-Invoke-Docker @('run', '--rm', '--mount', "type=bind,source=$ScriptDir,target=/workspace", '--workdir', '/workspace', 'mac-builder', 'bash', 'mac/build-universal.sh', '--universal')
+Invoke-Docker @('run', '--rm', '--env', 'THK_MAC_BACKEND=rust', '--mount', "type=bind,source=$ScriptDir,target=/workspace", '--workdir', '/workspace', 'mac-builder', 'bash', 'mac/build-universal.sh', '--universal')
 
 Write-Host 'macOS Universal build finished. See the versioned archive in dist.'

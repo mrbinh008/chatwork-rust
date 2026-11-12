@@ -1,6 +1,30 @@
 # THK-Chat Desktop
 
-Bản tái triển khai ứng dụng Chatwork Desktop bằng Rust, thay thế hoàn toàn nền tảng Electron/Node.js bằng stack native nhẹ hơn nhiều.
+Bản tái triển khai ứng dụng Chatwork Desktop: Windows dùng Rust, macOS dùng Swift + AppKit + WKWebView. Không đóng gói Electron/Node.js trong ứng dụng.
+
+## macOS native bằng Swift
+
+Bản build macOS mặc định dùng Swift + AppKit + WKWebView, yêu cầu macOS 12 trở lên. Windows tiếp tục dùng Rust. Phần cửa sổ, menu/phím tắt Command, menu bar, Dock badge, thông báo kèm ảnh, hộp thoại chọn/tải file và cập nhật được xử lý bằng API macOS. Nội dung Chatwork và các tiện ích cây thư mục, shortcut, quản lý/xem trước file vẫn dùng chung JavaScript/CSS trong `src/`.
+
+Build trên Mac đã cài Xcode Command Line Tools (`xcode-select --install`):
+
+```bash
+bash build-mac.sh --native       # Chỉ kiến trúc của Mac đang build
+bash build-mac.sh --universal    # Apple Silicon + Intel
+```
+
+Mã Swift ở `mac/Native/`. Script chạy kiểm thử policy và type-check AppKit/WebKit trước khi build release tối ưu bằng `-O -whole-module-optimization`; đóng gói `.app`, `.tar.gz`, `.zip`, `.dmg` trong `dist/`. Workflow release macOS cũng dùng Swift và không cần Rust. App được ký ad-hoc; chưa có Developer ID/notarization.
+
+Cookie và website storage dùng kho bền vững mặc định của WebKit; cấu hình cửa sổ, zoom và thư mục tải dùng UserDefaults. Chuyển từ bản Rust có thể cần đăng nhập lại; chưa có bước chuyển đổi cấu hình Rust sang UserDefaults. Thông báo và cập nhật dùng callback; lịch kiểm tra cập nhật mỗi 6 giờ có tolerance 5 phút. Chưa có số đo CPU/RAM so sánh với bản Rust; phần web vẫn dùng các observer/timer chung.
+
+Kiểm thử Swift riêng: `bash mac/test-native.sh`. Cần chạy thử đăng nhập/SSO, thông báo, tải đè file và cập nhật trên Mac trước khi phát hành. Máy Windows không biên dịch AppKit; `build-mac-docker.ps1` giữ đường cross-build **Rust cũ**, hoặc có thể chọn `THK_MAC_BACKEND=rust bash build-mac.sh --universal`.
+
+## Bản 2.26.3
+
+- macOS chuyển sang host Swift + AppKit + WKWebView, build Universal cho Apple Silicon và Intel; yêu cầu macOS 12 trở lên. Windows giữ host Rust.
+- GitHub Actions kiểm thử Swift và các tiện ích web, build/đóng gói macOS; chỉ công bố release khi cả Windows và macOS thành công.
+- Cây thư mục giữ đúng thư mục cha khi sửa thư mục con; tự mở các thư mục cha khi thêm hoặc chuyển thư mục con. Bỏ `thk-file-icon` trong danh sách file.
+- Bản Mac được ký ad-hoc, chưa notarize. Chuyển từ host Rust có thể cần đăng nhập lại; chưa có số đo hiệu năng so sánh hoặc kiểm thử tương tác đăng nhập/SSO trên máy người dùng.
 
 ## Bản 2.26.2
 

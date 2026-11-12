@@ -118,7 +118,6 @@
             if (!visible.length) { list.appendChild(make('p','thk-file-empty',t('empty'))); return; }
             visible.forEach(file => {
                 const row=make('article','thk-file-row');
-                const icon=make('span','thk-file-icon',({image:'IMG',document:'DOC',video:'VID',other:'FILE'})[file.category]); icon.setAttribute('aria-hidden','true'); row.appendChild(icon);
                 if (file.thumbnail && file.category==='image') {
                     const image=make('img','thk-file-thumbnail'); image.src=file.thumbnail; image.alt=''; image.loading='lazy'; image.addEventListener('error',()=>image.remove()); icon.replaceChildren(image);
                 }

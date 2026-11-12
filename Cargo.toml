@@ -1,6 +1,6 @@
 [package]
 name = "chatwork-rs"
-version = "2.26.2"
+version = "2.26.3"
 repository = "https://github.com/mrbinh008/chatwork-rust"
 edition = "2021"
 description = "THK-Chat Desktop Client"

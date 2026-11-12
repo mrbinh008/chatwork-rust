@@ -11,6 +11,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -34,16 +35,22 @@ jobs:
           if-no-files-found: error
   macos:
     runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      THK_MAC_BACKEND: swift
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Build and test macOS
+          node-version: '22'
+      - name: Build and test native Swift macOS
         run: |
           version=$(awk -F '"' '/^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
           if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then echo 'Git tag and Cargo version must match'; exit 1; fi
-          cargo test --locked
+          node examples/toolkit-regression.cjs
+          node examples/files-regression.cjs
+          node examples/downloads-regression.cjs
+          node examples/file-preview-regression.cjs
           bash build-mac.sh --universal
       - uses: actions/upload-artifact@v4
         with:

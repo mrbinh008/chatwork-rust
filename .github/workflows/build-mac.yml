@@ -1,4 +1,4 @@
-name: Build macOS Universal App
+name: Build Swift macOS Universal App
 
 on:
   push:
@@ -7,49 +7,39 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-macos:
     runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      THK_MAC_BACKEND: swift
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Node for web regression tests
+        uses: actions/setup-node@v4
         with:
-          targets: aarch64-apple-darwin, x86_64-apple-darwin
+          node-version: '22'
 
-      - name: Cache Cargo Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Build Universal macOS DMG
+      - name: Test Chatwork extensions
         run: |
-          chmod +x build-mac.sh
-          ./build-mac.sh --universal
+          for check in toolkit files downloads file-preview branding ui-render request-navigation formatting-editors mention; do
+            node "examples/$check-regression.cjs"
+          done
+
+      - name: Test Swift and build Universal macOS app
+        run: bash build-mac.sh --universal
 
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: THK-macOS-Universal-DMG
           path: dist/*.dmg
-          if-no-files-found: error
-
-      - name: Upload App Bundle Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: THK-macOS-App
-          path: dist/THK-Chat-v*-macOS-*/THK-Chat.app
           if-no-files-found: error
 
       - name: Upload macOS archive
