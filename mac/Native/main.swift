@@ -61,17 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             return
         }
         webView = WKWebView(frame: .zero, configuration: configuration)
-        // Keep AppKit and WebKit on the system appearance, including live changes.
-        webView.appearance = nil
-        webView.underPageBackgroundColor = .windowBackgroundColor
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "THK-Chat"
-        window.appearance = nil
-        window.backgroundColor = .windowBackgroundColor
         window.minSize = NSSize(width: 500, height: 400)
         window.isReleasedWhenClosed = false
         window.delegate = self
