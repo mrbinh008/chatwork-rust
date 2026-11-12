@@ -1,283 +1,353 @@
 # THK-Chat Desktop
 
-Bản tái triển khai ứng dụng Chatwork Desktop: Windows dùng Rust, macOS dùng Swift + AppKit + WKWebView. Không đóng gói Electron/Node.js trong ứng dụng.
+Ứng dụng desktop cho Chatwork, kết hợp giao diện web Chatwork với các tiện ích làm việc của THK: tổ chức danh mục theo cây, gom nhóm theo prefix, định dạng nội dung, tạo mẫu nghỉ phép/Pull Request và quản lý tệp đính kèm.
 
-Thư mục phòng được tổ chức ngay trên các danh mục Chatwork có sẵn. Nút `+` trên mỗi danh mục tạo thư mục con; nút `↳` chọn thư mục cha. Danh mục mới và danh sách phòng được lưu qua chức năng native của Chatwork; quan hệ cha/con được lưu riêng cho từng tài khoản trên thiết bị hiện tại. Menu sửa/xóa và thao tác chọn phòng của Chatwork vẫn dùng giao diện native.
+Windows sử dụng **Rust + WebView2**; macOS sử dụng **Swift + AppKit + WKWebView**. Ứng dụng dùng WebView của hệ thống, không đóng gói Electron hoặc Node.js để chạy.
 
-Danh sách chọn phòng lấy toàn bộ phòng và liên lạc từ kho dữ liệu native, cập nhật tên liên lạc theo lô và có bộ lọc Nhóm/Người dùng/My Chat. Người liên lạc chưa có phòng chat được ghi rõ trong danh sách. Nút `⚡` xem trước và gom nhóm theo `[prefix]`, `【prefix】`, dấu `/` hoặc ` - `; có thể bật tự động thêm nhóm mới. Các lần gom sau dùng lại danh mục theo nhánh và giữ phòng đã có.
+**Phiên bản trong mã nguồn: 2.26.4** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
 
-## macOS native bằng Swift
+## Mục lục
 
-Bản build macOS mặc định dùng Swift + AppKit + WKWebView, yêu cầu macOS 12 trở lên. Windows tiếp tục dùng Rust. Phần cửa sổ, menu/phím tắt Command, menu bar, Dock badge, thông báo kèm ảnh, hộp thoại chọn/tải file và cập nhật được xử lý bằng API macOS. Nội dung Chatwork và các tiện ích cây thư mục, shortcut, quản lý/xem trước file vẫn dùng chung JavaScript/CSS trong `src/`.
+- [Giới thiệu hệ thống](#giới-thiệu-hệ-thống)
+- [Cài đặt và bắt đầu](#cài-đặt-và-bắt-đầu)
+- [Chức năng và cách sử dụng](#chức-năng-và-cách-sử-dụng)
+- [Phím tắt](#phím-tắt)
+- [App hoạt động như thế nào](#app-hoạt-động-như-thế-nào)
+- [Dữ liệu và thiết lập](#dữ-liệu-và-thiết-lập)
+- [Build, kiểm thử và phát hành](#build-kiểm-thử-và-phát-hành)
+- [Giới hạn và xử lý sự cố](#giới-hạn-và-xử-lý-sự-cố)
 
-Build trên Mac đã cài Xcode Command Line Tools (`xcode-select --install`):
+## Giới thiệu hệ thống
 
-```bash
-bash build-mac.sh --native       # Chỉ kiến trúc của Mac đang build
-bash build-mac.sh --universal    # Apple Silicon + Intel
-```
+THK-Chat gồm hai phần:
 
-Mã Swift ở `mac/Native/`. Script chạy kiểm thử policy và type-check AppKit/WebKit trước khi build release tối ưu bằng `-O -whole-module-optimization`; đóng gói `.app`, `.tar.gz`, `.zip`, `.dmg` trong `dist/`. Workflow release macOS cũng dùng Swift và không cần Rust. App được ký ad-hoc; chưa có Developer ID/notarization.
+1. **Host desktop native** quản lý cửa sổ, menu, khay hệ thống/menu bar, thông báo, tải file và cập nhật ứng dụng.
+2. **Giao diện Chatwork và Toolkit** chạy trong WebView. Chatwork cung cấp đăng nhập, phòng chat, tin nhắn, liên lạc và phân quyền; Toolkit bổ sung công cụ trên chính giao diện đó.
 
-Cookie và website storage dùng kho bền vững mặc định của WebKit; cấu hình cửa sổ, zoom và thư mục tải dùng UserDefaults. Chuyển từ bản Rust có thể cần đăng nhập lại; chưa có bước chuyển đổi cấu hình Rust sang UserDefaults. Thông báo và cập nhật dùng callback; lịch kiểm tra cập nhật mỗi 6 giờ có tolerance 5 phút. Chưa có số đo CPU/RAM so sánh với bản Rust; phần web vẫn dùng các observer/timer chung.
+Đây là client riêng của THK, sử dụng dịch vụ Chatwork. App cần kết nối mạng và tài khoản Chatwork; dữ liệu trò chuyện được xử lý theo quyền truy cập của tài khoản đang đăng nhập.
 
-Kiểm thử Swift riêng: `bash mac/test-native.sh`. Cần chạy thử đăng nhập/SSO, thông báo, tải đè file và cập nhật trên Mac trước khi phát hành. Máy Windows không biên dịch AppKit; `build-mac-docker.ps1` giữ đường cross-build **Rust cũ**, hoặc có thể chọn `THK_MAC_BACKEND=rust bash build-mac.sh --universal`.
-
-## Bản 2.26.4
-
-- Windows và macOS Swift dùng chung các cải tiến danh mục phòng, danh sách nhóm/người dùng và auto gom theo prefix.
-- Tổ chức cây ngay trên danh mục native của Chatwork; có tạo thư mục con và chọn thư mục cha. Quan hệ cha/con và quy tắc auto gom được lưu riêng theo tài khoản trên thiết bị.
-- Sửa ô chọn trống: tên chat cá nhân được lấy từ người liên lạc tương ứng; đọc toàn bộ kho phòng/liên lạc native, cập nhật tên theo lô, lọc Nhóm/Người dùng/My Chat và giữ lựa chọn khi tải lại.
-- Nút `⚡` xem trước các nhánh theo `[prefix]`, `【prefix】`, `/`, ` - `; dùng lại danh mục cũ, giữ phòng đang có và hỗ trợ tự thêm nhóm mới.
-- Icon định dạng nằm trên ô nhập trong popup “Chỉnh sửa mô tả”, dùng chung SVG với thanh soạn tin. Sửa phím tắt bị xử lý hai lần.
-- macOS Universal tiếp tục yêu cầu macOS 12+, ký ad-hoc. CI kiểm thử Swift, tiện ích web và nội dung gói `.app` trước khi phát hành.
-
-## Bản 2.26.3
-
-- macOS chuyển sang host Swift + AppKit + WKWebView, build Universal cho Apple Silicon và Intel; yêu cầu macOS 12 trở lên. Windows giữ host Rust.
-- GitHub Actions kiểm thử Swift và các tiện ích web, build/đóng gói macOS; chỉ công bố release khi cả Windows và macOS thành công.
-- Cây thư mục giữ đúng thư mục cha khi sửa thư mục con; tự mở các thư mục cha khi thêm hoặc chuyển thư mục con. Bỏ `thk-file-icon` trong danh sách file.
-- Bản Mac được ký ad-hoc, chưa notarize. Chuyển từ host Rust có thể cần đăng nhập lại; chưa có số đo hiệu năng so sánh hoặc kiểm thử tương tác đăng nhập/SSO trên máy người dùng.
-
-## Bản 2.26.2
-
-- **Notification Avatar**: Hiển thị ảnh đại diện (avatar) của người gửi trực tiếp trên thông báo desktop (Windows Toast notification và macOS banner).
-- **Cây thư mục phòng trò chuyện (Room Folder Tree)**: Tính năng nhóm các danh mục phòng trò chuyện theo cây thư mục phân cấp ở thanh sidebar bên trái. Hỗ trợ tạo thư mục con nhiều cấp, gập/mở (collapse/expand), đếm tổng tin chưa đọc, nút `⚡ Tự động gom` (phân tích tiền tố `[...]`, `【...】` hoặc dấu `/`, `-` trong tên phòng để gom nhóm tự động), và modal thêm/sửa/xóa thư mục.
-- **Tùy chọn Phạm vi cấu hình Shortcut**: Cho phép cấu hình hiển thị shortcut áp dụng cho **Nhóm hiện tại (mặc định)** hoặc **Tất cả các nhóm**, có nút khôi phục thiết lập chung (Inherit).
-- **Cài đặt Phím tắt tùy chỉnh (Custom Shortkeys)**: Cho phép ghi nhận và gán lại tổ hợp phím tắt tùy chỉnh cho từng nút công cụ (`info`, `infoTitle`, `code`, `hr`, `leave`, `preview`, `pr`, `files`) với giao diện bấm phím trực quan và lắng nghe phím toàn cục.
-- **Xem trước Thumbnail File trực tiếp**: Hiển thị ảnh thumbnail xem trước trực tiếp trên danh sách tệp đính kèm mà không cần bấm thêm một bước vào nút "Xem trước".
-- **Kích thước Icon Toolbar chuẩn hóa**: Chuẩn hóa kích thước các nút công cụ shortcut lên 32px × 32px và icon SVG 19px × 19px sắc nét, đồng bộ hoàn hảo với các nút công cụ gốc của Chatwork.
-
-## Bản 2.26.1
-
-- Shortcut chỉ còn cấu hình cho **nhóm hiện tại**. Lựa chọn bật/tắt được áp dụng ngay, ưu tiên hơn điều kiện mặc định theo tên nhóm và giữ nguyên khi toolbar được Chatwork tạo lại. Cấu hình chung từ bản cũ vẫn được đọc làm mặc định chuyển đổi; thay đổi mới chỉ ghi vào nhóm hiện tại.
-- Quản lý file có xem trước ảnh, PDF, video và văn bản trong app. DOCX/PPTX hiển thị nội dung văn bản; XLSX có chọn sheet và bảng tối đa 200 dòng × 50 cột. Đây là bản xem nội dung cơ bản, không thay thế trình Office đầy đủ. File không hỗ trợ/giới hạn dung lượng sẽ hiện thông báo và vẫn có nút tải xuống. Đóng preview sẽ hủy tải và thu hồi blob URL.
-- Form nghỉ có từng cặp **ngày + giờ bắt đầu + giờ kết thúc** độc lập; có thể thêm từng ngày hoặc thêm một khoảng ngày cùng giờ. Giữ nguyên định dạng `[info]`, tag nhiều leader và nhớ lựa chọn leader như trước. Palette riêng cho form bảo đảm chữ/nền phù hợp sáng/tối, gồm cả ô date/time native.
-- Chỉ chạy một phiên app cho mỗi hồ sơ người dùng. Mở app lần nữa sẽ đưa cửa sổ đang chạy lên trước và thoát phiên mới. Khóa được hệ điều hành giải phóng khi app đóng/crash; OTA đợi phiên cũ thoát trước khi khởi động bản mới.
-
-Kiểm tra thêm: `node examples/file-preview-regression.cjs`. Bộ test Rust có kiểm thử kích hoạt phiên đang chạy bằng tiến trình thứ hai.
-
-## Bản 2.26.0
-
-- OTA lấy bản stable mới nhất từ GitHub Releases của `mrbinh008/chatwork-rust`. App kiểm tra ngầm sau khi mở và mỗi 6 giờ; có thể mở **Help → Check for Updates** hoặc nút kiểm tra trong Cài đặt.
-- Khi có bản mới: **Tải bản cập nhật → Cập nhật và khởi động lại**. App kiểm tra kích thước, SHA-256 do GitHub cung cấp, cấu trúc gói và phiên bản trước khi cài. Windows thay các file app tại thư mục đang chạy; macOS thay `.app` tại vị trí hiện tại. Giữ bản cũ để khôi phục nếu thay thế thất bại; không thay dữ liệu đăng nhập hay cấu hình.
-- Chỉ nhận đúng gói `THK-Chat-vX.Y.Z-Windows-x64.zip` hoặc `THK-Chat-vX.Y.Z-macOS-Universal.tar.gz`. Repository và release phải công khai; không nhúng GitHub token vào app. Windows cần chạy bản đóng gói `THK-Chat.exe`; Mac cần chạy `.app` trong thư mục có quyền ghi, ví dụ Applications, thay vì chạy trong DMG.
-- Quản lý file theo nhóm: **Tất cả / Ảnh / Tài liệu / Video / Khác**, tìm tên/người tải lên, tải file qua hộp thoại lưu native. Danh sách dùng phản hồi hiện có của Chatwork; chưa bổ sung phân trang vượt giới hạn server. Khi không đọc được API, giao diện dùng các file đính kèm đã tải trong phần chat và ghi rõ nguồn dữ liệu.
-- Cài đặt shortcut ban đầu có phạm vi chung/riêng nhóm; từ 2.26.1 giao diện chỉ cấu hình nhóm hiện tại. Nút Cài đặt luôn được giữ để khôi phục các nút đã ẩn.
-- UI lấy màu, nền, font từ Chatwork hiện tại; hỗ trợ sáng/tối và cửa sổ nhỏ. **Emoji gần đây đã được bỏ**, bao gồm theo dõi lịch sử và nút emoji bổ sung; vẫn dùng emoji gốc của Chatwork.
-
-### Phát hành OTA
-
-Cài bản 2.26.0 một lần để có updater. Các lần sau chỉ cần phát hành phiên bản mới trên GitHub:
-
-1. Đổi version trong `Cargo.toml`, đồng bộ `Cargo.lock` bằng `cargo check` và commit mã.
-2. Tạo và push tag trùng phiên bản, ví dụ `v2.26.1`.
-3. Workflow `.github/workflows/release.yml` build/test Windows và Mac Universal, rồi tạo release có đủ các asset sau khi cả hai job đạt. Nếu build lỗi, release chưa được công bố. Có thể chạy workflow thủ công để lấy artifact mà chưa phát hành.
-
-GitHub cung cấp trường `digest: sha256:...` cho asset qua [Releases API](https://docs.github.com/en/rest/releases/releases). Không dùng file source ZIP tự sinh của GitHub làm gói cập nhật. Log và bản dự phòng nằm trong thư mục `Chatwork/updates` cạnh file cấu hình. Bản này chưa được push/tag hay phát hành lên GitHub từ phiên làm việc này.
-
-Kiểm tra bổ sung:
-
-```powershell
-node examples/files-regression.cjs
-node examples/toolkit-regression.cjs
-./build.ps1
-powershell -ExecutionPolicy Bypass -File ./examples/ota-windows-regression.ps1
-```
-
-## 🏗️ Kiến trúc
-
-| Thành phần | Electron (gốc) | Rust (bản mới) |
+| Thành phần | Windows | macOS |
 |---|---|---|
-| Runtime | Node.js 24 + Chromium | Native Rust binary |
-| WebView | Chromium embedded | WebView2 (Windows built-in) |
-| Window | Electron BrowserWindow | `tao` crate |
-| IPC | Electron IPC | JSON messages qua `wry` IPC |
-| Config | electron-store (JSON) | Custom JSON config |
-| Tray | Electron Tray | `tao` SystemTray |
-| Notifications | Electron Notification | `notify-rust` crate |
-| Size | ~250MB | ~5-10MB |
+| Host ứng dụng | Rust, `tao`, `wry` | Swift, AppKit |
+| Bộ máy hiển thị | Microsoft Edge WebView2 | WKWebView/WebKit |
+| Truy cập nhanh | System tray | Menu bar và Dock |
+| Thông báo | Windows Toast | UserNotifications |
+| Gói phát hành | Setup EXE, ZIP portable | DMG, ZIP, TAR.GZ Universal |
+| Tiện ích giao diện | JavaScript/CSS dùng chung | JavaScript/CSS dùng chung |
 
-## ✅ Tính năng được tái hiện
+## Cài đặt và bắt đầu
 
-Từ phân tích file `dist/chatwork_main.js` (595KB bundled):
+### Windows
 
-- **Multi-tab browsing** – Hỗ trợ nhiều tab (Chatwork, KDDI/Chatwork, services khác)
-- **System tray** – Icon tray với badge count (số tin chưa đọc)
-- **Notifications** – Desktop notification khi có tin nhắn mới
-- **Zoom** – Zoom In/Out/Reset (Ctrl+/-, 0) giống bản gốc
-- **Window state** – Lưu/phục hồi vị trí, kích thước cửa sổ
-- **Config persistence** – Lưu tất cả settings vào `%APPDATA%\Chatwork\config.json`
-- **Auto-launch** – Tùy chọn khởi động cùng Windows
-- **Proxy support** – Qua WebView2 proxy settings
-- **Custom User-Agent** – Giống Electron app gốc
-- **Context menu** – Copy/Paste/Save Image/Copy Link
-- **Menu bar** – File/Edit/View/Go/Window/Help đầy đủ
-- **IPC bridge** – JS→Rust communication qua `window.__chatwork_ipc`
-- **Close to tray** – Đóng cửa sổ → ẩn xuống tray (không thoát)
-- **Developer Tools** – Mở DevTools bằng Ctrl+Shift+I
+Yêu cầu Windows 10/11 và WebView2 Runtime.
 
-## 🔧 Yêu cầu build
+1. Mở [GitHub Releases](https://github.com/mrbinh008/chatwork-rust/releases/latest).
+2. Chọn một trong hai gói:
+   - `THK-ChatSetup-v<version>.exe`: cài theo hướng dẫn. Thư mục mặc định là `%LOCALAPPDATA%\THK-Chat`.
+   - `THK-Chat-v<version>-Windows-x64.zip`: giải nén toàn bộ vào thư mục có quyền ghi và chạy `THK-Chat.exe`.
+3. Với bản portable, giữ `WebView2Loader.dll` và thư mục `assets` cạnh file EXE.
+4. Đăng nhập Chatwork trong cửa sổ ứng dụng.
 
-### 1. Cài đặt Rust
-```powershell
-# Tải và chạy rustup
-Invoke-WebRequest https://win.rustup.rs -OutFile rustup-init.exe
-.\rustup-init.exe
+### macOS
 
-# Thêm Windows MSVC target
-rustup target add x86_64-pc-windows-msvc
+Yêu cầu **macOS 12 trở lên**. Gói Universal hỗ trợ cả Apple Silicon và Intel.
 
-# Cài Visual Studio Build Tools (nếu chưa có)
-# https://visualstudio.microsoft.com/visual-cpp-build-tools/
-```
+1. Tải DMG hoặc ZIP macOS Universal từ trang Releases.
+2. Đưa `THK-Chat.app` vào **Applications**, rồi mở app từ đó.
+3. Đăng nhập Chatwork và cho phép thông báo nếu muốn nhận thông báo desktop.
 
-### 2. Yêu cầu hệ thống
-- **Windows 10/11** (cần WebView2 Runtime - đã có sẵn trên Windows 11)
-- **WebView2 Runtime**: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
-- **Visual Studio Build Tools** với MSVC toolchain
+Bản Mac hiện ký **ad-hoc**, chưa có Developer ID/notarization. macOS có thể yêu cầu xác nhận trong Privacy & Security. Việc chuyển từ host Rust Mac cũ sang Swift có thể cần đăng nhập lại.
 
-### 3. Build
+### Bắt đầu sử dụng
 
-```powershell
-# Debug build (nhanh, có console)
-cargo build
+Sau khi chọn một phòng chat:
 
-# Release build (tối ưu, không console)
-cargo build --release --target x86_64-pc-windows-msvc
+- Dùng các icon trên thanh soạn tin để chèn Info, Tiêu đề, Code, đường kẻ hoặc xem trước.
+- Mở **⚙ Cài đặt** để chọn ngôn ngữ, bật/tắt nút và đặt phím tắt.
+- Dùng các nút `+`, `↳`, `⚡` trên danh mục bên trái để tổ chức thư mục.
+- Mở **Quản lý file** để tìm và xem tệp của phòng hiện tại.
 
-# Chạy thử
-cargo run
-```
+Đóng cửa sổ chính sẽ ẩn app để tiếp tục chạy. Để thoát hẳn, chọn **Quit/Thoát** trong menu ứng dụng hoặc tray/menu bar. Mở app lần nữa sẽ kích hoạt phiên đang chạy.
 
-### 4. Build installer
+## Chức năng và cách sử dụng
 
-```powershell
-# Dùng script tự động
-.\build.ps1
+### 1. Danh mục phòng theo cây thư mục
 
-# Hoặc dùng cargo-wix (WiX installer)
-cargo install cargo-wix
-cargo wix init
-cargo wix
+Cây được hiển thị ngay trên **các danh mục có sẵn của Chatwork**, trong vùng danh sách phòng bên trái. Các menu sửa/xóa, nút gập/mở và thao tác chọn phòng của Chatwork được giữ lại.
 
-# Hoặc NSIS
-makensis installer.nsi
-```
+| Nút trên danh mục | Chức năng |
+|---|---|
+| `+` | Tạo danh mục con và chọn các phòng đưa vào |
+| `↳` | Chọn hoặc thay đổi thư mục cha |
+| `⚡` | Gom nhóm theo prefix, mặc định chọn danh mục này làm nơi chứa |
 
-## 📁 Cấu trúc project
+**Tạo thư mục con:**
 
-```
-chatwork-rs/
-├── src/
-│   ├── main.rs          # Entry point, event loop chính
-│   ├── app.rs           # Constants, shared state, IPC types
-│   ├── config.rs        # Persistent config (thay electron-store)
-│   ├── menu.rs          # Menu bar + context menu
-│   ├── tray.rs          # System tray + badge icon
-│   ├── notification.rs  # Desktop notifications
-│   └── updater.rs       # Auto-update (Squirrel-compatible)
-├── assets/
-│   └── chatwork.ico     # App icon (copy từ bản gốc)
-├── build.rs             # Windows resource embedding
-├── build.ps1            # Build & package script
-├── installer.nsi        # NSIS installer script
-└── Cargo.toml           # Dependencies
-```
+1. Tạo danh mục bằng menu có sẵn của Chatwork nếu chưa có danh mục cha.
+2. Bấm `+` trên danh mục cha, nhập tên và kiểm tra ô **Thư mục cha**.
+3. Chọn phòng/nhóm/người dùng muốn đưa vào danh mục, rồi bấm **Lưu**.
 
-## 🎯 Nguyên tắc hoạt động
+Danh sách chọn đọc toàn bộ phòng và liên lạc có sẵn trong kho dữ liệu của phiên Chatwork, thay vì chỉ lấy các dòng đang thấy trên màn hình. Tên chat cá nhân được lấy từ người liên lạc tương ứng.
 
-App hoạt động như một **thin native wrapper** xung quanh WebView2:
+Bạn có thể lọc **Tất cả / Nhóm / Người dùng / Chat của tôi**, tìm tên có hoặc không dấu, chọn các mục đang lọc và bấm **Tải lại**. Các mục đã chọn được giữ khi tìm kiếm hoặc tải lại. Liên lạc chưa có phòng chat được ghi rõ và chưa thể chọn; hãy mở cuộc trò chuyện trước khi thêm vào danh mục.
 
-1. **Khởi động**: Load config → Tạo window native → Khởi tạo WebView2
-2. **WebView**: Load `https://www.chatwork.com` với custom User-Agent
-3. **Init script**: Inject JavaScript để:
-   - Áp dụng zoom đã lưu
-   - Expose `window.__chatwork_ipc` API
-   - Monitor title changes để detect unread count
-4. **IPC**: Renderer JS → JSON message → Rust handler → native action
-5. **Tray**: Đóng window → ẩn xuống tray, click tray → show window
+**Đổi nhánh:** bấm `↳`, chọn thư mục cha khác hoặc **Thư mục gốc**, rồi lưu. Có thể tạo nhiều cấp; ứng dụng kiểm tra để tránh chọn chính thư mục đó hoặc một thư mục con của nó làm cha.
 
-## ⚠️ Lưu ý
+Chatwork lưu danh mục và danh sách phòng. **Quan hệ cha–con do Toolkit lưu trên thiết bị**, riêng theo tài khoản. Vì vậy, tên danh mục và phòng có thể đồng bộ qua Chatwork, còn cấu trúc cây trên Windows không tự chuyển sang Mac hoặc máy khác.
 
-- Đây là **client wrapper** - toàn bộ logic Chatwork chạy trên server của Chatwork
-- Cần **WebView2 Runtime** trên máy người dùng (đã có sẵn trên Windows 11)
-- Tài khoản đăng nhập được lưu bởi WebView2 session (giống browser)
-- Không phải port Electron→Rust của UI/logic - mà là native host mới cho cùng web app
+### 2. Tự động gom nhóm theo prefix
 
-## 📊 So sánh kích thước
+Bấm `⚡` cạnh phần điều khiển danh sách phòng hoặc trên một danh mục:
 
-| | Electron app gốc | Rust app mới |
-|---|---|---|
-| Installer | ~153MB | ~5-10MB |
-| RAM (idle) | ~200-400MB | ~30-80MB |
-| Startup | 2-4s | 0.3-1s |
-| CPU (idle) | 1-5% | <0.5% |
+1. Chọn thư mục đích, hoặc **Danh mục gốc**.
+2. Xem trước các nhánh và số nhóm phù hợp.
+3. Chọn **Tự động thêm nhóm mới có cùng prefix** nếu muốn tiếp tục áp dụng quy tắc về sau.
+4. Bấm **Áp dụng**.
 
+| Tên nhóm | Nhánh được tạo/dùng lại |
+|---|---|
+| `[HN] API` | `HN` |
+| `【HN】 Website` | `HN` |
+| `THK / Frontend / Sprint` | `THK → Frontend` |
+| `PMS - Review` | `PMS` |
+| `Release-70` | Không khớp quy tắc prefix mặc định |
 
-## Chatwork Toolkit tích hợp
+Dấu gạch ngang dùng làm dấu phân cách cần có khoảng trắng hai bên: ` - `. Chức năng gom áp dụng cho **nhóm chat**, giữ các phòng đã có trong danh mục và dùng lại nhánh tương ứng khi chạy lại.
 
-- Quick tag: Info, Info có tiêu đề, Code và đường kẻ ngang nằm trên thanh công cụ soạn tin. Mention dùng cú pháp `@tên`; hai nút @ và tag tất cả đã được bỏ.
-- Mention: gõ `@tên`, tìm có/không dấu và tên nhiều từ, chọn bằng ↑/↓ và Enter/Tab; danh sách đánh dấu người đã tag. Đọc cả thành viên nhóm liên quan từ Chatwork hiện tại.
-- Emoji: chọn emoji thường dùng và emoji gần đây qua nút ☺. Toolkit ghi nhớ lịch sử khi chèn hoặc gõ emoji; số mục gần đây có thể chỉnh từ 1 đến 50 trong ⚙.
-- Ngôn ngữ: Auto, tiếng Việt, English, 日本語 trong ⚙.
-- Nghỉ phép: nút hiển thị trong nhóm **Attendance infor_THKHN**. Chọn ngày rời rạc hoặc khoảng ngày, bỏ từng ngày, nhập giờ bắt đầu/kết thúc hoặc chọn giờ gợi ý. Lý do gợi ý bằng tiếng Anh/Nhật, tùy chọn ngôn ngữ nội dung. Request có dạng:
+Quy tắc tự gom lưu trên thiết bị theo tài khoản và thư mục đích. Khi được bật, quy tắc được kiểm tra lúc app đang chạy và dữ liệu phòng thay đổi. Có thể mở lại `⚡`, bỏ chọn chế độ tự động và bấm **Áp dụng** để tắt cho thư mục đích đó.
+
+### 3. Định dạng tin nhắn và mô tả nhóm
+
+Các icon **Info, Tiêu đề, Code, Đường kẻ, Xem trước** nằm trên thanh soạn tin. Chọn một đoạn văn bản trước khi bấm để bọc đoạn đó bằng thẻ Chatwork, hoặc đặt con trỏ để chèn mẫu trống.
+
+Khi mở popup **Chỉnh sửa mô tả**, cùng bộ icon xuất hiện **bên trong popup, trên ô nhập**. Thao tác định dạng áp dụng vào ô mô tả, giữ nguyên bản nháp chat bên dưới. Bấm nút lưu của Chatwork để cập nhật mô tả nhóm.
+
+Xem trước mô phỏng các thẻ Chatwork như Info, Title, Code, Quote, HR và TO. Markdown như `**bold**` được giữ dạng chữ theo bộ dựng hiện tại. Nút sao chép trên khối code giúp lấy nội dung mã mà không kèm nút giao diện.
+
+### 4. Mention thành viên
+
+Gõ `@` và một phần tên trong ô chat để mở danh sách gợi ý. Có thể tìm có/không dấu và tên nhiều từ; dùng `↑`/`↓`, rồi **Enter** hoặc **Tab** để chọn. Danh sách có lựa chọn `@ALL` và đánh dấu người đã được tag trong nội dung.
+
+Nguồn thành viên gồm thành viên phòng và thành viên từ các team liên quan mà Chatwork cung cấp. Emoji sử dụng giao diện có sẵn của Chatwork.
+
+### 5. Mẫu nghỉ phép / báo bận
+
+Bấm nút lịch để chọn loại yêu cầu, ngày nghỉ, giờ bắt đầu/kết thúc, lý do và các leader cần tag. Mỗi ngày có khoảng giờ riêng; có thể thêm từng ngày hoặc thêm cả khoảng ngày cùng giờ. Form hỗ trợ xem trước, sao chép, chèn vào ô chat và gửi.
+
+Ví dụ nội dung được tạo:
 
 ```text
 [info]
 - Request: PAID_LEAVE
-- Time: 08:00 - 17:00  12/11/2026
+- Time: 08:00 - 17:00  20/11/2026
 - Reason: Personal matter
 [/info]
 ```
 
-  Nhiều ngày được xuất thành nhiều dòng `- Time:`; giờ nghỉ áp dụng cho mọi ngày đã chọn. Có xem trước, sao chép, chèn hoặc gửi; thiếu ngày, lý do hoặc giờ không hợp lệ sẽ được báo ngay trên form.
-- Pull Request: nút **PR** xuất hiện trong nhóm **【HN】Source Code Review** và chèn mẫu trực tiếp vào ô chat, không mở popup. Tên dự án được nhớ khi sửa trong mẫu.
-- Copy code: nút Copy ở góc khối code.
-- Link tin nhắn mở trong cửa sổ hiện tại; click trực tiếp vào thông báo hoặc nút mở thông báo khôi phục cửa sổ và gọi xử lý click của đúng thông báo. Khi có dữ liệu phòng/tin nhắn, dùng dữ liệu đó để điều hướng.
+Theo mặc định, nút xuất hiện trong phòng có tên chứa `Attendance infor_THKHN`. Có thể thay đổi việc hiển thị trong Cài đặt.
 
-Phần **File manager** được bổ sung từ 2.26.0 với phân loại file và tìm kiếm; xem giới hạn nguồn dữ liệu ở mục phiên bản trên.
+### 6. Mẫu Pull Request
 
-Kiểm tra hồi quy JavaScript (cần Node.js):
-
-```powershell
-node examples/mention-regression.cjs
-node examples/request-navigation-regression.cjs
-node examples/toolkit-regression.cjs
-node examples/ui-render-regression.cjs
-cargo check --offline
-```
-
-Build và chạy test Rust cho bản Windows GNU bằng `./build.ps1`. Script liên kết app và test bằng LLVM LLD có sẵn trong Rust để tránh lỗi khởi động `0xc0000005` của GNU ld trong toolchain hiện tại. Kết quả gồm bộ cài `dist/THK-ChatSetup-v2.25.14.exe` và bản portable `dist/THK-Chat-v2.25.14-Windows-x64.zip`.
-
-Giao diện Toolkit mới dùng `src/ui.css`: popup có nội dung cuộn, footer cố định và bố cục thích ứng với cửa sổ nhỏ. Preview hiển thị thẻ Chatwork (Info, Title, Code, Quote, HR, TO), giữ nguyên Markdown dạng chữ; nền màu và khoảng trắng của nội dung được giữ. Các nút chèn thẻ thêm dòng mới sau thẻ đóng. Compact mode đã được bỏ theo yêu cầu. Copy code nhận diện khối code lồng bên trong tin nhắn và giữ nguyên thụt dòng/khoảng trắng.
-
-Ảnh trong Mention được chuẩn hóa từ đường dẫn `/avatar/...` sang máy chủ ảnh Chatwork; ảnh không tải được sẽ hiển thị chữ cái đầu của tên. Popup mở từ đầu nội dung, không tự cuộn xuống ô lý do.
-
-Form nghỉ có thêm tìm kiếm/chọn nhiều leader từ thành viên phòng. Mỗi leader được xuất thành một dòng `[To:ID] Tên` phía trên khối `[info]`. Danh sách ID được lưu sau khi sao chép, chèn hoặc gửi request và được khôi phục lần sau; dữ liệu được tách riêng theo tài khoản và phòng chat. Có thể bỏ từng người đã chọn. Các trường hợp đổi phòng khi form đang mở hoặc leader đã lưu chưa tải được đều được kiểm tra trước khi chèn/gửi.
-
-## THK-Chat 2.25.13
-
-Bộ nhận diện dùng bản Original trong `THK-Chat-Logo-Pack`: icon Windows, tray, taskbar, macOS ICNS, tên cửa sổ/About/thông báo và gói cài đặt đều dùng THK-Chat. Có thể đồng bộ lại tài nguyên bằng `node examples/sync-brand-assets.cjs`.
-
-Nút PR chèn trực tiếp mẫu sau; tên dự án đã nhập được dùng lại ở lần chèn tiếp theo:
+Nút PR chèn mẫu trực tiếp vào ô chat:
 
 ```text
 [toall]
 [info]
-Project name: 
-Pull Request: 
-Spec: 
-Thời gian review dự kiến: 
+Project name:
+Pull Request:
+Spec:
+Thời gian review dự kiến:
 [/info]
 ```
 
-Trong ô chat hoặc textarea mô tả đang được chọn: Ctrl/Cmd+I chèn Info; Ctrl/Cmd+Shift+I chèn Info có Title; Ctrl/Cmd+K chèn Code; Ctrl/Cmd+H chèn HR; Ctrl/Cmd+Shift+P mở Preview. Preview mô tả không có chức năng gửi tin nhắn chat.
+Tên dự án được ghi nhớ khi bạn sửa trong mẫu; lần chèn sau con trỏ chuyển đến trường còn cần nhập. Theo mặc định, nút xuất hiện trong phòng có tên chứa `【HN】Source Code Review`; có thể bật ở phòng khác qua Cài đặt.
 
-Build Mac Universal trên Windows: `powershell -ExecutionPolicy Bypass -File .\build-mac-docker.ps1` (cần Docker Desktop có quyền truy cập). Trên Mac: `bash build-mac.sh --universal`. Script đọc phiên bản từ Cargo.toml, ghép Intel + Apple Silicon và tạo `dist/THK-Chat-v2.25.14-macOS-Universal.tar.gz`; trên Mac có thêm ZIP và DMG được ký ad-hoc. Chưa có chữ ký Developer ID/notarization.
+### 7. Quản lý và xem trước file
 
-## THK-Chat 2.25.14
+Mở **Quản lý file** từ thanh soạn tin, lọc **Tất cả / Ảnh / Tài liệu / Video / Khác**, rồi tìm theo tên file hoặc người tải lên. Bấm tên file/nút **Xem trước** để mở nội dung, hoặc **Tải xuống** để chọn nơi lưu bằng hộp thoại hệ điều hành.
 
-Tải file được giữ trong phiên WebView, bao gồm link mở cửa sổ mới và blob. File được lưu vào Downloads hoặc `download_dir` trong cấu hình; nếu trùng tên sẽ thêm số và không ghi đè file cũ. Có thông báo tải xong/thất bại. Icon Copy chỉ hiển thị trên khối code thực sự, không xuất hiện trên nội dung thường hoặc Info.
+| Loại tệp | Cách hiển thị bản xem trước |
+|---|---|
+| Ảnh, PDF, video | Xem trong app, tùy định dạng được WebView hỗ trợ |
+| Văn bản, mã nguồn, CSV, JSON… | Hiển thị nội dung văn bản |
+| DOCX | Trích nội dung văn bản |
+| PPTX | Nội dung văn bản theo slide, tối đa 50 slide |
+| XLSX | Chọn sheet; tối đa 200 dòng × 50 cột mỗi sheet |
 
-Kiểm thử bổ sung: `node examples/downloads-regression.cjs`, `node examples/formatting-editors-regression.cjs`, `node examples/branding-regression.cjs`.
+Giới hạn tải bản xem trước văn bản là **2 MiB**, DOCX/XLSX/PPTX **25 MiB**, PDF **64 MiB**. Ảnh/video có thể được mở từ URL trực tiếp; khi tải tạm vào bộ nhớ để xem, giới hạn là **64 MiB**. Bản xem trước Office là bản đọc nội dung cơ bản; bố cục có thể khác file gốc.
+
+Danh sách file sử dụng phản hồi Chatwork hiện có. Khi không đọc được API, app có thể lấy các tệp đính kèm từ phần tin nhắn đã tải và ghi rõ nguồn dữ liệu. Đây không phải công cụ xuất toàn bộ lịch sử file của tài khoản.
+
+### 8. Cài đặt, thông báo và điều khiển cửa sổ
+
+- **Cài đặt Toolkit:** ngôn ngữ Auto/Tiếng Việt/English/日本語, bật/tắt nút và gán lại phím tắt.
+- **Phạm vi hiển thị nút:** nhóm hiện tại hoặc tất cả nhóm. Thiết lập riêng của nhóm được ưu tiên; nút dùng thiết lập chung xóa phần ghi đè của nhóm đó.
+- **Thông báo desktop:** tích hợp thông báo hệ điều hành, hỗ trợ ảnh người gửi khi có dữ liệu phù hợp. Bấm thông báo để mở lại cửa sổ và đi đến phòng/tin nhắn tương ứng khi có thông tin điều hướng.
+- **Unread badge:** hiển thị số chưa đọc qua tiêu đề/tray trên Windows và Dock trên Mac.
+- **Cửa sổ:** menu tải lại trang, quay lại/tiến tới và zoom. Bản Mac có menu bar, phím Command và thao tác toàn màn hình native.
+- **Giao diện:** Toolkit lấy màu và font từ Chatwork, có hỗ trợ sáng/tối và nội dung popup cuộn trên cửa sổ nhỏ.
+
+Để cấu hình thanh công cụ, mở **⚙**, chọn phạm vi rồi bật/tắt từng nút. Để đổi phím tắt, bấm ô tổ hợp phím hiện tại và nhấn tổ hợp mới; `Esc` hủy ghi nhận. `Backspace`/`Delete` xóa phần gán riêng để trở về tổ hợp mặc định.
+
+### 9. Cập nhật ứng dụng
+
+App kiểm tra bản stable trên GitHub Releases lúc khởi động và theo chu kỳ khoảng 6 giờ. Có thể kiểm tra thủ công tại:
+
+- Windows: **Help → Check for Updates**.
+- macOS: **THK-Chat → Check for Updates** hoặc menu bar.
+- Cả hai: nút kiểm tra cập nhật trong Cài đặt Toolkit.
+
+Khi có bản mới, chọn **Tải bản cập nhật**, sau đó **Cập nhật và khởi động lại**. Lưu nội dung đang soạn trước khi khởi động lại.
+
+Updater kiểm tra phiên bản, kích thước, SHA-256 và cấu trúc gói; giữ bản trước để khôi phục khi thay thế thất bại. Hãy chạy bản Windows đã đóng gói hoặc `.app` Mac trong thư mục có quyền ghi, thay vì chạy trực tiếp trong DMG.
+
+## Phím tắt
+
+Đây là các tổ hợp mặc định của Toolkit; có thể đổi trong **⚙ Cài đặt**.
+
+| Chức năng | Mặc định |
+|---|---|
+| Info | `Ctrl+I` |
+| Info có tiêu đề | `Ctrl+Shift+I` |
+| Code | `Ctrl+K` |
+| Đường kẻ | `Ctrl+H` |
+| Nghỉ phép / báo bận | `Ctrl+Shift+L` |
+| Xem trước | `Ctrl+Shift+P` |
+| Mẫu Pull Request | `Ctrl+Shift+R` |
+| Quản lý file | `Ctrl+Shift+F` |
+
+Toolkit nhận tổ hợp tương ứng bằng **Command** trên macOS. Một số phím có thể trùng lệnh của hệ điều hành hoặc menu ứng dụng, chẳng hạn `Cmd+H` để ẩn app. Khi gặp xung đột, dùng icon hoặc gán tổ hợp khác trong Cài đặt.
+
+## App hoạt động như thế nào
+
+```mermaid
+flowchart LR
+    U["Người dùng"] --> H["Host native: Rust hoặc Swift"]
+    H --> W["WebView2 hoặc WKWebView"]
+    W <--> C["Dịch vụ Chatwork"]
+    W <--> T["Toolkit JavaScript và CSS"]
+    T -->|IPC JSON| H
+    H --> O["Thông báo, tải file, tray và Dock"]
+    H --> G["GitHub Releases: cập nhật app"]
+```
+
+1. **Khởi động:** host nạp cấu hình, kiểm tra phiên đang chạy và tạo cửa sổ/WebView.
+2. **Đăng nhập:** WebView tải Chatwork. Cookie và phiên đăng nhập được lưu trong kho dữ liệu của WebView.
+3. **Nạp Toolkit:** host đưa các script và CSS đi kèm bản build vào trang. Toolkit thêm công cụ soạn thảo, popup, danh mục và quản lý file.
+4. **Đọc dữ liệu:** Toolkit dùng kho phòng/người dùng và các chức năng sẵn có trong phiên Chatwork. Các yêu cầu danh mục sử dụng dịch vụ native của trang, cùng phiên đăng nhập và quyền hiện tại.
+5. **Tương tác hệ điều hành:** JavaScript gửi thông điệp JSON qua IPC để host xử lý thông báo, badge hoặc cập nhật. Tải file được kết nối với WebView và hộp thoại lưu native.
+6. **Theo dõi giao diện:** các observer và kiểm tra định kỳ gắn lại công cụ khi Chatwork dựng lại DOM hoặc đổi phòng. Quy tắc prefix cũng được kiểm tra trong quá trình này.
+
+App không có backend Chatwork riêng. Dịch vụ Chatwork tiếp tục quản lý tin nhắn, tài khoản, nhóm và phân quyền; GitHub Releases cung cấp gói cập nhật desktop.
+
+## Dữ liệu và thiết lập
+
+| Dữ liệu | Nơi lưu |
+|---|---|
+| Phòng, tin nhắn, liên lạc, tên danh mục, phòng trong danh mục | Dịch vụ Chatwork |
+| Quan hệ thư mục cha/con và quy tắc auto gom | `localStorage` của WebView, riêng theo tài khoản |
+| Ngôn ngữ Toolkit, nút hiển thị, phím tắt, tên dự án PR… | `localStorage` của WebView |
+| Phiên đăng nhập | Kho cookie/website data của WebView |
+| Cấu hình host Windows | `%APPDATA%\Chatwork\config.json` |
+| Website data Windows mặc định | `%APPDATA%\Chatwork\WebView2Data` |
+| Cấu hình host Mac | UserDefaults; vị trí cửa sổ do AppKit lưu |
+| Website data Mac | Kho bền vững mặc định của WebKit |
+
+Thiết lập local phụ thuộc hồ sơ WebView và thiết bị. Xóa website data có thể làm mất phiên đăng nhập và thiết lập Toolkit trên máy; cài app trên thiết bị mới cần thiết lập lại cấu trúc cây và quy tắc auto gom.
+
+## Build, kiểm thử và phát hành
+
+### Build Windows
+
+Cần Rust, MSVC/Windows SDK, WebView2 Runtime và PowerShell. Cài NSIS nếu cần tạo Setup EXE. Node.js chỉ cần cho các bài kiểm thử JavaScript; app đã đóng gói không cần Node.js.
+
+```powershell
+git clone https://github.com/mrbinh008/chatwork-rust.git
+cd chatwork-rust
+./build.ps1 -Online
+```
+
+Script chạy kiểm thử Rust, build release và đóng gói vào `dist/`. `-Online` cho phép tải dependency; bỏ tùy chọn này khi dependency đã có trong cache. Nếu thiếu NSIS, script vẫn tạo ZIP portable.
+
+### Build macOS Swift
+
+Cần Mac với Xcode/Command Line Tools, Swift compiler và macOS SDK.
+
+```bash
+bash build-mac.sh --native       # Kiến trúc của máy đang build
+bash build-mac.sh --universal    # Apple Silicon và Intel
+```
+
+Script kiểm thử/type-check Swift, build tối ưu, đóng gói và ký ad-hoc. Kết quả trong `dist/` gồm app bundle và các gói archive; DMG được tạo khi có `hdiutil`.
+
+Đường build Docker trên Windows qua `build-mac-docker.ps1` dành cho **host Rust Mac cũ**. Bản Swift/AppKit được build trên Mac hoặc runner macOS của GitHub Actions.
+
+### Chạy kiểm thử
+
+Kiểm thử JavaScript dùng các module có sẵn của Node.js:
+
+```powershell
+$checks = @(
+    'toolkit', 'room-directory', 'native-folders', 'folder-auto',
+    'description-toolbar', 'formatting-editors', 'mention', 'ui-render',
+    'files', 'downloads', 'file-preview', 'branding', 'request-navigation'
+)
+foreach ($check in $checks) {
+    node "examples/$check-regression.cjs"
+    if ($LASTEXITCODE -ne 0) { throw "Failed: $check" }
+}
+```
+
+Kiểm thử host Rust Windows: `cargo test --locked` hoặc chạy `build.ps1` để kiểm thử cùng quá trình build/đóng gói. Script build có xử lý linker cho toolchain Windows GNU.
+
+Trên Mac:
+
+```bash
+bash mac/test-native.sh
+node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.4-macOS-Universal/THK-Chat.app
+```
+
+Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu phiên bản, hai kiến trúc, toàn bộ script/CSS, updater và icon trong gói với mã nguồn.
+
+### GitHub Actions và release
+
+| Workflow | Khi chạy | Kết quả |
+|---|---|---|
+| [build-mac.yml](.github/workflows/build-mac.yml) | Push `main`/`master`, pull request hoặc chạy thủ công | Kiểm thử và artifact macOS Swift Universal |
+| [release.yml](.github/workflows/release.yml) | Push tag `v*` hoặc chạy thủ công | Build Windows và Mac; chỉ publish khi là tag và cả hai job đạt |
+
+Để phát hành phiên bản mới:
+
+1. Đồng bộ phiên bản trong `Cargo.toml`, `Cargo.lock`, `mac/Info.plist`, giá trị mặc định của `installer.nsi` và phần giới thiệu README.
+2. Chạy kiểm thử, commit và push code.
+3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.4`.
+4. Kiểm tra Actions và các asset trên trang Releases.
+
+Updater sử dụng gói `THK-Chat-v<version>-Windows-x64.zip` hoặc `THK-Chat-v<version>-macOS-Universal.tar.gz`. Các file SHA256 được phát hành cùng bộ cài và archive.
+
+### Cấu trúc mã nguồn
+
+| Đường dẫn | Vai trò |
+|---|---|
+| `src/main.rs`, `src/app.rs`, `src/config.rs` | Khởi động và cấu hình host Rust |
+| `src/menu.rs`, `src/tray.rs`, `src/notification.rs`, `src/taskbar.rs` | Menu, tray, thông báo và badge Windows |
+| `src/injected.js`, `src/ui.css` | Định dạng, mention, form nghỉ, preview và giao diện Toolkit |
+| `src/toolkit.js` | Cài đặt, phím tắt, PR và danh sách phòng/liên lạc |
+| `src/room-folders.js`, `src/folder-auto-group.js` | Phân cấp danh mục và gom prefix |
+| `src/files.js`, `src/file-preview.js`, `src/downloads.js` | Quản lý, xem trước và điều phối tải file |
+| `src/updater.rs`, `src/update-ui.js`, `ota/` | Cập nhật và giao diện cập nhật |
+| `mac/Native/` | Host Swift, chính sách điều hướng và updater Mac |
+| `examples/`, `mac/Tests/` | Các bài kiểm thử |
+| `build.ps1`, `mac/build-universal.sh`, `.github/workflows/` | Build, đóng gói và phát hành |
+
+## Giới hạn và xử lý sự cố
+
+- **Không thấy công cụ hoặc bố cục thay đổi:** thử tải lại từ menu View và kiểm tra bản cập nhật. Các tiện ích tích hợp với DOM/dịch vụ nội bộ của trang nên có thể cần điều chỉnh khi Chatwork đổi giao diện.
+- **Danh sách chọn thiếu tên hoặc chưa cập nhật:** kiểm tra bộ lọc/từ khóa, bấm Tải lại và chờ cập nhật thông tin liên lạc. Dữ liệu phụ thuộc phiên đăng nhập và quyền truy cập Chatwork.
+- **Thư mục trên máy khác có cấu trúc khác:** thiết lập lại quan hệ cha/con và quy tắc auto gom trên thiết bị đó; các thiết lập này lưu local.
+- **Không nhận thông báo:** kiểm tra quyền thông báo của hệ điều hành và thiết lập thông báo của Chatwork. Ảnh người gửi và điều hướng đến tin nhắn phụ thuộc dữ liệu thông báo nhận được.
+- **Không xem được file:** dùng Tải xuống để mở bằng ứng dụng phù hợp. Quyền truy cập, giới hạn dung lượng và codec của WebView ảnh hưởng khả năng xem trước.
+- **Không cập nhật được:** kiểm tra kết nối GitHub, quyền ghi thư mục ứng dụng và việc app đang chạy từ gói cài đặt hợp lệ. Bản Mac nên nằm trong Applications.
+- **SSO/đăng nhập:** tuân theo quy trình Chatwork và chính sách tổ chức; khả năng đăng nhập trong WebView còn phụ thuộc nhà cung cấp xác thực.
+
+Các bài kiểm thử tự động xác minh logic và đóng gói; chúng không thay thế toàn bộ thao tác đăng nhập/SSO và kiểm tra giao diện trên từng máy. Dự án chưa có benchmark CPU/RAM/khởi động chuẩn hóa để công bố so sánh hiệu năng.
