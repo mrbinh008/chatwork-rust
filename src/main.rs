@@ -7,6 +7,7 @@ mod downloads;
 mod menu;
 mod notification;
 mod save_dialog;
+mod single_instance;
 mod taskbar;
 mod tray;
 mod updater;
@@ -50,6 +51,12 @@ enum UserEvent {
 }
 
 fn main() {
+    let config_path = AppConfig::config_path();
+    let mut instance = match single_instance::Instance::acquire(config_path.parent().expect("Config directory missing")) {
+        Ok(single_instance::Launch::Primary(instance)) => instance,
+        Ok(single_instance::Launch::Secondary) => return,
+        Err(error) => { eprintln!("Cannot acquire THK-Chat instance lock: {error}"); return; }
+    };
     // Automatically detect or configure WebView2 Runtime environment (Windows only)
     #[cfg(windows)]
     ensure_webview2_env();
@@ -75,6 +82,10 @@ fn main() {
     // Create event loop
     let event_loop: EventLoop<UserEvent> = EventLoopBuilder::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    {
+        let focus_proxy = proxy.clone();
+        instance.listen(move || { let _ = focus_proxy.send_event(UserEvent::ShowWindow); });
+    }
     eprintln!("[DEBUG 6] event_loop created");
 
     // ── Build main window ────────────────────────────────────────────────────
@@ -215,6 +226,7 @@ fn main() {
     }
 
     event_loop.run(move |event, _, control_flow| {
+        let _keep_instance_lock = &instance;
         *control_flow = ControlFlow::Wait;
 
         match event {
@@ -281,10 +293,33 @@ fn main() {
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
+#[inline(never)]
+fn embedded_text(bytes: &'static [u8]) -> &'static str {
+    std::str::from_utf8(bytes).expect("Embedded UI assets must be valid UTF-8")
+}
+
+#[cfg(test)]
+mod ui_asset_tests {
+    #[test]
+    fn initialization_contains_complete_valid_ui_sources() {
+        let script=super::build_init_script(1.0);
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for name in ["injected.js","toolkit.js","downloads.js","files.js","file-preview.js","update-ui.js"] {
+            let source=std::fs::read_to_string(root.join(name)).unwrap().replace("__ZOOM__","1").replace("__VERSION__",crate::app::APP_VERSION);
+            assert!(script.contains(&source),"Embedded script differs from source: {name}");
+        }
+        let css=std::fs::read_to_string(root.join("ui.css")).unwrap();
+        assert!(script.contains(&serde_json::to_string(&css).unwrap()));
+    }
+}
+
 fn build_init_script(zoom: f64) -> String {
-    let css = serde_json::to_string(include_str!("ui.css")).expect("UI CSS is serializable");
+    let css = serde_json::to_string(embedded_text(include_bytes!("ui.css"))).expect("UI CSS is serializable");
     let brand_icon = serde_json::to_string(include_str!("../assets/branding/icon.svg")).expect("Brand icon is serializable");
-    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}", css, brand_icon, include_str!("injected.js"), include_str!("toolkit.js"), include_str!("downloads.js"), include_str!("files.js"), include_str!("update-ui.js"));
+    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}\n{}", css, brand_icon,
+        embedded_text(include_bytes!("injected.js")), embedded_text(include_bytes!("toolkit.js")),
+        embedded_text(include_bytes!("downloads.js")), embedded_text(include_bytes!("files.js")),
+        embedded_text(include_bytes!("file-preview.js")), embedded_text(include_bytes!("update-ui.js")));
     script
         .replace("__ZOOM__", &zoom.to_string())
         .replace("__VERSION__", APP_VERSION)

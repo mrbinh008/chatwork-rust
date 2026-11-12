@@ -46,8 +46,8 @@
             const mime = String(unwrap(raw.mime_type ?? raw.content_type ?? raw.mime ?? '') || '');
             const size = Number(unwrap(raw.filesize ?? raw.file_size ?? raw.size ?? raw.fs)) || 0;
             const timestamp = Number(unwrap(raw.upload_time ?? raw.uploaded_at ?? raw.send_time ?? raw.tm ?? 0));
-            return { id, name, category:category(name,mime), size:Math.max(0,size), uploader:users[aid]?.name?.value || String(unwrap(raw.uploader_name ?? '') || ''), timestamp,
-                url:trustedUrl(unwrap(raw.download_url ?? raw.downloadUrl ?? raw.dl_url ?? raw.dlink ?? raw.url)), thumbnail:trustedUrl(unwrap(raw.thumbnail_url ?? raw.thumbnail ?? '')) };
+            return { id, name, mime, category:category(name,mime), size:Math.max(0,size), uploader:users[aid]?.name?.value || String(unwrap(raw.uploader_name ?? '') || ''), timestamp,
+                url:trustedUrl(unwrap(raw.download_url ?? raw.downloadUrl ?? raw.dl_url ?? raw.dlink ?? raw.url)), previewUrl:trustedUrl(unwrap(raw.preview_url ?? raw.previewUrl ?? raw.view_url)), thumbnail:trustedUrl(unwrap(raw.thumbnail_url ?? raw.thumbnail ?? '')) };
         }).filter(Boolean);
     }
     function loadedAttachments() {
@@ -65,6 +65,11 @@
         return files.filter(file => (kind === 'all' || file.category === kind) && `${file.name} ${file.uploader}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(text));
     }
     function sizeLabel(bytes) { if (!bytes) return ''; const unit = bytes >= 1048576 ? 'MB' : bytes >= 1024 ? 'KB' : 'B'; return `${Math.round(bytes / (unit==='MB'?1048576:unit==='KB'?1024:1) * 10)/10} ${unit}`; }
+    function downloadUrl(file) { return trustedUrl(file.url) || new URL(`/gateway/download_file.php?file_id=${encodeURIComponent(file.id)}&bin=1`,location.origin).href; }
+    function previewUrls(file) {
+        const gateway=/^\d+$/.test(file.id)?new URL(`/gateway/download_file.php?file_id=${file.id}&bin=1`,location.origin).href:'';
+        return [...new Set([trustedUrl(file.url),gateway,trustedUrl(file.previewUrl)].filter(Boolean))];
+    }
     async function fetchFiles(roomId, signal) {
         const app = window.CW?.application;
         const token = app?.domainAPIServiceContext?.taskAPIService?.apiClient?.accessToken;
@@ -91,8 +96,15 @@
         const filters = make('div','thk-file-filters'); filters.setAttribute('role','group'); filters.setAttribute('aria-label',t('title')); view.body.appendChild(filters);
         const summary = make('p','thk-leave-hint'); summary.setAttribute('role','status'); view.body.appendChild(summary);
         const list = make('div','thk-file-list'); view.body.appendChild(list);
-        let files=[], kind='all', closed=false, request=null, fallback=false;
-        view.cleanup.push(() => { closed=true; request?.abort(); });
+        let files=[], kind='all', closed=false, request=null, fallback=false, previewDispose=null;
+        view.cleanup.push(() => { closed=true; request?.abort(); previewDispose?.(); });
+        function preview(file,previousFocus){
+            if (toolkit.getRoom().id!==room.id) { summary.textContent=t('changed');return; }
+            const scroll=view.body.scrollTop;[controls,filters,summary,list].forEach(el=>el.hidden=true);
+            previewDispose=window.__thkFilePreview.open(file,{body:view.body,isCurrent:()=>!closed&&toolkit.getRoom().id===room.id,onBack:()=>{
+                previewDispose=null;[controls,filters,summary,list].forEach(el=>el.hidden=false);view.body.scrollTop=scroll;previousFocus?.focus();
+            }});view.body.scrollTop=0;
+        }
         function render() {
             filters.replaceChildren();
             ['all','image','document','video','other'].forEach(value => {
@@ -110,15 +122,16 @@
                 if (file.thumbnail && file.category==='image') {
                     const image=make('img','thk-file-thumbnail'); image.src=file.thumbnail; image.alt=''; image.loading='lazy'; image.addEventListener('error',()=>image.remove()); icon.replaceChildren(image);
                 }
-                const details=make('div','thk-file-details'); details.appendChild(make('strong','thk-file-name',file.name));
+                const details=make('div','thk-file-details');const name=make('button','thk-file-name thk-file-open',file.name);name.type='button';name.addEventListener('click',()=>preview(file,name));details.appendChild(name);
                 const date=file.timestamp>0 ? new Date(file.timestamp>1e12?file.timestamp:file.timestamp*1000).toLocaleDateString() : '';
                 details.appendChild(make('span','thk-file-meta',[t(file.category),sizeLabel(file.size),file.uploader || t('unknown'),date].filter(Boolean).join(' · '))); row.appendChild(details);
                 const download=make('button','thk-btn-secondary thk-file-download',t('download')); download.type='button'; download.setAttribute('aria-label',`${t('download')}: ${file.name}`);
                 download.addEventListener('click',()=>{
                     if (toolkit.getRoom().id !== room.id) { summary.textContent=t('changed'); return; }
-                    const url=file.url || new URL(`/gateway/download_file.php?file_id=${encodeURIComponent(file.id)}&bin=1`,location.origin).href;
-                    window.__thk_startDownload?.(url,file.name);
-                }); row.appendChild(download); list.appendChild(row);
+                    window.__thk_startDownload?.(downloadUrl(file),file.name);
+                });
+                const actions=make('div','thk-file-actions'),previewButton=make('button','thk-btn-secondary thk-file-preview',({vi:'Xem trước',en:'Preview',ja:'プレビュー'})[toolkit.getLanguage()]);previewButton.type='button';previewButton.addEventListener('click',()=>preview(file,previewButton));
+                actions.append(previewButton,download);row.appendChild(actions);list.appendChild(row);
             });
         }
         async function load() {
@@ -140,5 +153,5 @@
         }
         search.addEventListener('input',render); refresh.addEventListener('click',load); load();
     }
-    window.__thkFiles = { open, category, normalizeFiles, filterFiles };
+    window.__thkFiles = { open, category, normalizeFiles, filterFiles, downloadUrl, previewUrls };
 })();

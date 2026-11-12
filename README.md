@@ -2,13 +2,22 @@
 
 Bản tái triển khai ứng dụng Chatwork Desktop bằng Rust, thay thế hoàn toàn nền tảng Electron/Node.js bằng stack native nhẹ hơn nhiều.
 
+## Bản 2.26.1
+
+- Shortcut chỉ còn cấu hình cho **nhóm hiện tại**. Lựa chọn bật/tắt được áp dụng ngay, ưu tiên hơn điều kiện mặc định theo tên nhóm và giữ nguyên khi toolbar được Chatwork tạo lại. Cấu hình chung từ bản cũ vẫn được đọc làm mặc định chuyển đổi; thay đổi mới chỉ ghi vào nhóm hiện tại.
+- Quản lý file có xem trước ảnh, PDF, video và văn bản trong app. DOCX/PPTX hiển thị nội dung văn bản; XLSX có chọn sheet và bảng tối đa 200 dòng × 50 cột. Đây là bản xem nội dung cơ bản, không thay thế trình Office đầy đủ. File không hỗ trợ/giới hạn dung lượng sẽ hiện thông báo và vẫn có nút tải xuống. Đóng preview sẽ hủy tải và thu hồi blob URL.
+- Form nghỉ có từng cặp **ngày + giờ bắt đầu + giờ kết thúc** độc lập; có thể thêm từng ngày hoặc thêm một khoảng ngày cùng giờ. Giữ nguyên định dạng `[info]`, tag nhiều leader và nhớ lựa chọn leader như trước. Palette riêng cho form bảo đảm chữ/nền phù hợp sáng/tối, gồm cả ô date/time native.
+- Chỉ chạy một phiên app cho mỗi hồ sơ người dùng. Mở app lần nữa sẽ đưa cửa sổ đang chạy lên trước và thoát phiên mới. Khóa được hệ điều hành giải phóng khi app đóng/crash; OTA đợi phiên cũ thoát trước khi khởi động bản mới.
+
+Kiểm tra thêm: `node examples/file-preview-regression.cjs`. Bộ test Rust có kiểm thử kích hoạt phiên đang chạy bằng tiến trình thứ hai.
+
 ## Bản 2.26.0
 
 - OTA lấy bản stable mới nhất từ GitHub Releases của `mrbinh008/chatwork-rust`. App kiểm tra ngầm sau khi mở và mỗi 6 giờ; có thể mở **Help → Check for Updates** hoặc nút kiểm tra trong Cài đặt.
 - Khi có bản mới: **Tải bản cập nhật → Cập nhật và khởi động lại**. App kiểm tra kích thước, SHA-256 do GitHub cung cấp, cấu trúc gói và phiên bản trước khi cài. Windows thay các file app tại thư mục đang chạy; macOS thay `.app` tại vị trí hiện tại. Giữ bản cũ để khôi phục nếu thay thế thất bại; không thay dữ liệu đăng nhập hay cấu hình.
 - Chỉ nhận đúng gói `THK-Chat-vX.Y.Z-Windows-x64.zip` hoặc `THK-Chat-vX.Y.Z-macOS-Universal.tar.gz`. Repository và release phải công khai; không nhúng GitHub token vào app. Windows cần chạy bản đóng gói `THK-Chat.exe`; Mac cần chạy `.app` trong thư mục có quyền ghi, ví dụ Applications, thay vì chạy trong DMG.
 - Quản lý file theo nhóm: **Tất cả / Ảnh / Tài liệu / Video / Khác**, tìm tên/người tải lên, tải file qua hộp thoại lưu native. Danh sách dùng phản hồi hiện có của Chatwork; chưa bổ sung phân trang vượt giới hạn server. Khi không đọc được API, giao diện dùng các file đính kèm đã tải trong phần chat và ghi rõ nguồn dữ liệu.
-- Cài đặt chọn shortcut hiển thị cho tất cả nhóm hoặc riêng nhóm hiện tại; có thể quay về thiết lập chung. Nút Cài đặt luôn được giữ để khôi phục các nút đã ẩn. Các điều kiện hiển thị PR/đơn nghỉ theo tên nhóm vẫn được áp dụng.
+- Cài đặt shortcut ban đầu có phạm vi chung/riêng nhóm; từ 2.26.1 giao diện chỉ cấu hình nhóm hiện tại. Nút Cài đặt luôn được giữ để khôi phục các nút đã ẩn.
 - UI lấy màu, nền, font từ Chatwork hiện tại; hỗ trợ sáng/tối và cửa sổ nhỏ. **Emoji gần đây đã được bỏ**, bao gồm theo dõi lịch sử và nút emoji bổ sung; vẫn dùng emoji gốc của Chatwork.
 
 ### Phát hành OTA

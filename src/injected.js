@@ -1712,20 +1712,31 @@
         };
         const first = parse(start), last = parse(end);
         if (last < first) throw new Error('Ngày kết thúc phải từ ngày bắt đầu trở đi.');
+        if ((last-first)/86400000 >= 366) throw new Error('Chỉ chọn tối đa 366 ngày trong một lần.');
         const dates = [];
         for (const date = new Date(first); date <= last; date.setUTCDate(date.getUTCDate() + 1)) dates.push(date.toISOString().slice(0, 10));
         return dates;
     }
+    function getLeaveSlots(dates, start, end) {
+        return dates.map(value => typeof value === 'string' ? { date:value,start,end } : value);
+    }
     function validateLeaveRequest(dates, start, end, reason) {
         if (!dates.length) return 'Vui lòng chọn ít nhất một ngày nghỉ.';
         const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
-        if (!timePattern.test(start) || !timePattern.test(end)) return 'Vui lòng nhập đủ giờ bắt đầu và kết thúc.';
-        if (start >= end) return 'Giờ kết thúc phải sau giờ bắt đầu.';
+        const seen=new Set();
+        for(const slot of getLeaveSlots(dates,start,end)) {
+            try { getLeaveDateRange(slot.date,slot.date); } catch { return 'Vui lòng chọn ngày hợp lệ cho từng dòng.'; }
+            if(seen.has(slot.date)) return 'Mỗi ngày chỉ chọn một khoảng giờ nghỉ.';
+            seen.add(slot.date);
+            if (!timePattern.test(slot.start) || !timePattern.test(slot.end)) return 'Vui lòng nhập đủ giờ bắt đầu và kết thúc.';
+            if (slot.start >= slot.end) return 'Giờ kết thúc phải sau giờ bắt đầu.';
+        }
         if (!reason.trim()) return 'Vui lòng chọn hoặc nhập lý do nghỉ.';
         return '';
     }
     function formatLeaveRequest(type, dates, start, end, reason, leaders = []) {
-        const times = [...new Set(dates)].sort().map(date => '- Time: ' + start + ' - ' + end + '  ' + formatLeaveDate(date));
+        const times = [...new Set(getLeaveSlots(dates,start,end).sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start))
+            .map(slot => '- Time: ' + slot.start + ' - ' + slot.end + '  ' + formatLeaveDate(slot.date)))];
         const seen = new Set();
         const tags = leaders.filter(leader => leader && /^\d+$/.test(String(leader.id)) && !seen.has(String(leader.id)) && seen.add(String(leader.id)))
             .map(leader => '[To:' + leader.id + '] ' + String(leader.name || '').replace(/[\r\n]+/g, ' ').replace(/\[/g, '［').replace(/\]/g, '］').trim());
@@ -1783,7 +1794,7 @@
         const now = new Date();
         const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'),
             String(now.getDate()).padStart(2, '0')].join('-');
-        const selectedDates = new Set([today]);
+        const selectedSlots = [{date:today,start:'08:00',end:'17:00'}];
         const requestRoom = window.location.hash.match(/rid(\d+)/)?.[1] || '';
         const leaderStorageKey = getLeaveLeaderStorageKey();
         const selectedLeaderIds = new Set(readLeaveLeaders(leaderStorageKey));
@@ -1813,23 +1824,20 @@
                         `).join('')}
                     </div>
 
-                    <div class="thk-sec-title">2. Ngày nghỉ (có thể chọn nhiều ngày)</div>
-                    <div class="thk-leave-fields">
-                        <label>Từ ngày<input type="date" id="thkDateStart" class="thk-input-field" value="${today}" required /></label>
-                        <label>Đến ngày (tùy chọn)<input type="date" id="thkDateEnd" class="thk-input-field" /></label>
-                    </div>
-                    <div class="thk-chips-row"><button type="button" class="thk-chip-btn" id="thkAddDates">Thêm ngày / khoảng ngày</button><button type="button" class="thk-chip-btn" id="thkClearDates">Bỏ chọn tất cả</button></div>
-                    <div class="thk-chips-row" id="thkSelectedDates" aria-label="Ngày nghỉ đã chọn"></div>
-                    <p class="thk-leave-hint">Thêm từng ngày rời rạc hoặc cả khoảng ngày. Bấm vào ngày đã chọn để bỏ ngày đó.</p>
-                    <div class="thk-sec-title">3. Thời gian nghỉ (áp dụng cho mọi ngày đã chọn)</div>
-                    <div class="thk-chips-row" id="thkTimeChips">
-                        ${times.map((tm, idx) => `<button type="button" class="thk-chip-btn ${idx === 0 ? "active" : ""}" data-start="${tm[0]}" data-end="${tm[1]}">${tm[0]} - ${tm[1]}</button>`).join("")}
-                    </div>
-                    <div class="thk-leave-fields">
-                        <label>Từ giờ<input type="time" id="thkTimeStart" class="thk-input-field" value="08:00" required /></label>
-                        <label>Đến giờ<input type="time" id="thkTimeEnd" class="thk-input-field" value="17:00" required /></label>
-                    </div>
-                    <div class="thk-sec-title">4. Tag leader (có thể chọn nhiều người)</div>
+                    <div class="thk-sec-title">2. Ngày và thời gian nghỉ</div>
+                    <p class="thk-leave-hint">Mỗi dòng là một ngày kèm khoảng giờ nghỉ riêng.</p>
+                    <div id="thkSelectedDates" class="thk-leave-slots"></div>
+                    <div class="thk-chips-row"><button type="button" class="thk-chip-btn" id="thkAddSingleDate">Thêm ngày</button><button type="button" class="thk-chip-btn" id="thkClearDates">Bỏ chọn tất cả</button></div>
+                    <details class="thk-leave-range"><summary>Thêm nhiều ngày cùng khoảng giờ</summary>
+                      <div class="thk-leave-fields">
+                        <label>Từ ngày<input type="date" id="thkDateStart" class="thk-input-field" value="${today}" /></label>
+                        <label>Đến ngày<input type="date" id="thkDateEnd" class="thk-input-field" value="${today}" /></label>
+                        <label>Từ giờ<input type="time" id="thkTimeStart" class="thk-input-field" value="08:00" /></label>
+                        <label>Đến giờ<input type="time" id="thkTimeEnd" class="thk-input-field" value="17:00" /></label>
+                      </div>
+                      <button type="button" class="thk-chip-btn" id="thkAddDates">Thêm khoảng ngày</button>
+                    </details>
+                    <div class="thk-sec-title">3. Tag leader (có thể chọn nhiều người)</div>
                     <div class="thk-leader-search-row">
                         <input type="search" id="thkLeaderSearch" class="thk-input-field" placeholder="Tìm tên hoặc ID leader..." aria-label="Tìm leader" />
                         <button type="button" id="thkReloadLeaders" class="thk-chip-btn">Tải lại</button>
@@ -1837,7 +1845,7 @@
                     <div id="thkSelectedLeaders" class="thk-chips-row" aria-label="Leader đã chọn"></div>
                     <div id="thkLeaderResults" class="thk-leader-results" role="group" aria-label="Danh sách leader"></div>
                     <p class="thk-leave-hint">Mỗi leader được tag trên một dòng. Danh sách được nhớ sau khi sao chép, chèn hoặc gửi request.</p>
-                    <div class="thk-sec-title">5. Lý do (Reason / 理由)</div>
+                    <div class="thk-sec-title">4. Lý do (Reason / 理由)</div>
                     <label for="thkReasonLanguage">Ngôn ngữ lý do gợi ý</label>
                     <select id="thkReasonLanguage" class="thk-input-field"><option value="en">English</option><option value="ja">日本語</option><option value="both">English / 日本語</option></select>
                     <div class="thk-chips-row" id="thkReasonChips">
@@ -1884,8 +1892,7 @@
         });
 
         function getFormattedOutput() {
-            return formatLeaveRequest(selectedType, [...selectedDates], startTimeEl.value,
-                endTimeEl.value, reasonEl.value.trim(), selectedLeaders());
+            return formatLeaveRequest(selectedType, selectedSlots, '', '', reasonEl.value.trim(), selectedLeaders());
         }
         function selectedLeaders() {
             const byId = new Map(leaderMembers.map(member => [String(member.id), member]));
@@ -1936,37 +1943,45 @@
             prevRaw.textContent = getFormattedOutput();
             document.getElementById('thkLeaveRendered').innerHTML = parseMarkdownAndBBCode(getFormattedOutput());
             errorEl.textContent = '';
-            document.querySelectorAll('#thkTimeChips .thk-chip-btn').forEach(chip => {
-                chip.classList.toggle('active', chip.dataset.start === startTimeEl.value && chip.dataset.end === endTimeEl.value);
+            modalEl.querySelectorAll('.thk-leave-slot').forEach((row,index)=>{
+                row.querySelectorAll('.thk-slot-presets button').forEach(chip=>chip.classList.toggle('active',chip.dataset.start===selectedSlots[index].start&&chip.dataset.end===selectedSlots[index].end));
             });
         }
         function renderDates() {
-            const container = document.getElementById('thkSelectedDates');
-            container.replaceChildren();
-            [...selectedDates].sort().forEach(date => {
-                const chip = document.createElement('button');
-                chip.type = 'button'; chip.className = 'thk-chip-btn active';
-                chip.textContent = formatLeaveDate(date) + ' ×';
-                chip.setAttribute('aria-label', 'Bỏ ngày ' + formatLeaveDate(date));
-                chip.addEventListener('click', () => { selectedDates.delete(date); renderDates(); });
-                container.appendChild(chip);
-            });
-            updatePreview();
+            const container = document.getElementById('thkSelectedDates'); container.replaceChildren();
+            selectedSlots.forEach((slot,index)=>{
+                const row=document.createElement('div');row.className='thk-leave-slot';
+                const fields=document.createElement('div');fields.className='thk-slot-fields';
+                function input(labelText,type,key){
+                    const label=document.createElement('label');label.textContent=labelText;
+                    const input=document.createElement('input');input.type=type;input.className='thk-input-field thk-slot-'+key;input.value=slot[key];input.required=true;
+                    input.addEventListener('input',()=>{slot[key]=input.value;updatePreview();});label.appendChild(input);fields.appendChild(label);return input;
+                }
+                input('Ngày nghỉ','date','date');const from=input('Từ giờ','time','start'),to=input('Đến giờ','time','end');
+                const remove=document.createElement('button');remove.type='button';remove.className='thk-btn-secondary thk-slot-remove';remove.textContent='×';remove.setAttribute('aria-label','Xóa dòng ngày nghỉ');
+                remove.addEventListener('click',()=>{selectedSlots.splice(index,1);renderDates();});fields.appendChild(remove);row.appendChild(fields);
+                const presets=document.createElement('div');presets.className='thk-slot-presets thk-chips-row';
+                times.forEach(([start,end])=>{
+                    const chip=document.createElement('button');chip.type='button';chip.className='thk-chip-btn';chip.textContent=start+' - '+end;chip.dataset.start=start;chip.dataset.end=end;
+                    chip.addEventListener('click',()=>{slot.start=start;slot.end=end;from.value=start;to.value=end;updatePreview();});presets.appendChild(chip);
+                });row.appendChild(presets);container.appendChild(row);
+            });updatePreview();
         }
-        document.getElementById('thkAddDates').addEventListener('click', () => {
-            try {
-                getLeaveDateRange(startDateEl.value, endDateEl.value || startDateEl.value)
-                    .forEach(date => selectedDates.add(date));
-                renderDates();
-            } catch (error) { errorEl.textContent = error.message; }
+        document.getElementById('thkAddSingleDate').addEventListener('click',()=>{
+            const previous=selectedSlots[selectedSlots.length-1];let date=today;
+            if(previous?.date){const next=new Date(previous.date+'T00:00:00Z');if(Number.isFinite(next.getTime())){next.setUTCDate(next.getUTCDate()+1);date=next.toISOString().slice(0,10);}}
+            selectedSlots.push({date,start:previous?.start||'08:00',end:previous?.end||'17:00'});renderDates();
+            modalEl.querySelector('.thk-leave-slot:last-child input')?.focus({preventScroll:true});
         });
-        document.getElementById('thkClearDates').addEventListener('click', () => {
-            selectedDates.clear(); renderDates();
+        document.getElementById('thkAddDates').addEventListener('click',()=>{
+            try{
+                const dates=getLeaveDateRange(startDateEl.value,endDateEl.value||startDateEl.value);
+                const error=validateLeaveRequest(dates,startTimeEl.value,endTimeEl.value,'range');if(error)throw new Error(error);
+                dates.forEach(date=>{const existing=selectedSlots.find(slot=>slot.date===date);if(existing){existing.start=startTimeEl.value;existing.end=endTimeEl.value;}else selectedSlots.push({date,start:startTimeEl.value,end:endTimeEl.value});});renderDates();
+            }catch(error){errorEl.textContent=error.message;}
         });
-        renderDates();
-        refreshLeaders();
-        startTimeEl.addEventListener('input', updatePreview);
-        endTimeEl.addEventListener('input', updatePreview);
+        document.getElementById('thkClearDates').addEventListener('click',()=>{selectedSlots.length=0;renderDates();});
+        renderDates();refreshLeaders();
         reasonEl.addEventListener('input', () => {
             selectedReason = null;
             document.querySelectorAll('#thkReasonChips .thk-chip-btn').forEach(chip => chip.classList.remove('active'));
@@ -1979,12 +1994,6 @@
             updatePreview();
         }
         languageEl.addEventListener('change', applyReason);
-        document.querySelectorAll('#thkTimeChips .thk-chip-btn').forEach(chip => {
-            chip.addEventListener('click', () => {
-                startTimeEl.value = chip.dataset.start; endTimeEl.value = chip.dataset.end;
-                updatePreview();
-            });
-        });
         document.querySelectorAll('#thkReasonChips .thk-chip-btn').forEach(chip => {
             chip.addEventListener('click', () => {
                 selectedReason = Number(chip.dataset.reasonIndex);
@@ -1995,7 +2004,7 @@
         function validateRequest() {
             if ((window.location.hash.match(/rid(\d+)/)?.[1] || '') !== requestRoom) { errorEl.textContent = 'Phòng chat đã thay đổi. Vui lòng mở lại form request.'; return false; }
             if (selectedLeaders().length !== selectedLeaderIds.size) { errorEl.textContent = 'Chưa tải được thông tin một số leader đã lưu. Bấm Tải lại hoặc bỏ chọn leader đó.'; return false; }
-            const error = validateLeaveRequest([...selectedDates], startTimeEl.value, endTimeEl.value, reasonEl.value);
+            const error = validateLeaveRequest(selectedSlots, '', '', reasonEl.value);
             errorEl.textContent = error;
             return !error;
         }

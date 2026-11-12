@@ -1,10 +1,11 @@
-param([string]$Package = (Join-Path $PSScriptRoot '..\dist\THK-Chat-v2.26.0-Windows-x64.zip'))
+param([string]$Package)
 $ErrorActionPreference = 'Stop'
 $Project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $TestRoot = Join-Path $Project ('target\diagnostics\ota-' + [Guid]::NewGuid().ToString('N'))
 if (-not $TestRoot.StartsWith((Join-Path $Project 'target\'), [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid test directory' }
 New-Item -ItemType Directory -Path $TestRoot | Out-Null
 $Version = ([regex]::Match((Get-Content (Join-Path $Project 'Cargo.toml') -Raw), '(?m)^version\s*=\s*"([^"]+)"')).Groups[1].Value
+if (-not $Package) { $Package = Join-Path $Project "dist\THK-Chat-v$Version-Windows-x64.zip" }
 $Binary = Join-Path $Project "dist\THK-Chat-v$Version-Windows-x64\THK-Chat.exe"
 $Loader = Join-Path $Project "dist\THK-Chat-v$Version-Windows-x64\WebView2Loader.dll"
 $Install = Join-Path $TestRoot 'installed app'

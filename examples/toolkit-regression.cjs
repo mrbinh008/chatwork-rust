@@ -18,7 +18,7 @@ const window = { location: { hash: '#!rid7' }, CW: { application: {
 } } };
 const document = { readyState:'loading', documentElement:{lang:'vi'}, addEventListener() {}, querySelector() { return null; } };
 const context = vm.createContext({ window, document, navigator:{language:'en'}, localStorage:{getItem:key=>stored.get(key)??null,setItem:(key,value)=>stored.set(key,value)}, Intl, URL, Map, Set, WeakMap, console });
-const instrumented = source.replace('    window.__thkToolkit =', '    globalThis.testApi = { formatPullRequest, rememberPullRequestProject, getLanguage, translateLabel, resolveAvatarUrl, settings };\n    window.__thkToolkit =');
+const instrumented = source.replace('    window.__thkToolkit =', '    globalThis.testApi = { shortcutVisible, formatPullRequest, rememberPullRequestProject, getLanguage, translateLabel, resolveAvatarUrl, settings };\n    window.__thkToolkit =');
 vm.runInContext(instrumented, context);
 const api = context.testApi;
 assert.equal(api.resolveAvatarUrl('/avatar/user.rsz.png'), 'https://appdata.chatwork.com/avatar/user.rsz.png');
@@ -37,6 +37,15 @@ assert.equal(api.formatPullRequest(' Project ', ' https://example.com/pull/1 ', 
 assert.equal(api.formatPullRequest(), '[toall]\n[info]\nProject name: \nPull Request: \nSpec: \nThời gian review dự kiến: \n[/info]\n');
 api.rememberPullRequestProject(api.formatPullRequest('New Project'));
 assert.equal(JSON.parse(stored.get('thk-toolkit.prProject')),'New Project');
+stored.set('thk-toolkit.toolbar',JSON.stringify({pr:true,leave:true,code:false}));
+assert.equal(api.shortcutVisible('pr'),true,'Explicit PR setting overrides legacy room-name restrictions');
+assert.equal(api.shortcutVisible('code'),false);
+stored.set('thk-toolkit.toolbar.room.7',JSON.stringify({pr:false}));
+assert.equal(api.shortcutVisible('pr'),false,'Room preference overrides global preference');
+stored.set('thk-toolkit.toolbar.room.7',JSON.stringify({pr:true}));
+window.CW.application.domainServiceContext.roomService.roomRepository.entities[7].name.value='Other room';
+assert.equal(api.shortcutVisible('pr'),true);assert.equal(api.shortcutVisible('leave'),true);
+window.CW.application.domainServiceContext.roomService.roomRepository.entities[7].name.value='Attendance infor_THKHN';
 console.log('Toolkit language, membership and PR regression checks passed.');
 
 // Exercise dialogs and toolbar actions with a small DOM adapter, without a live Chatwork session.
@@ -103,15 +112,14 @@ let dialog=uiDocument.getElementById('thk-toolkit-panel');
 let language=dialog.querySelector('select');language.value='vi';language.dispatchEvent(new UIEvent('change'));
 assert.equal(leave.hidden,true);assert.equal(uiDocument.getElementById('thkToolkit-pr').hidden,false);
 dialog=uiDocument.getElementById('thk-toolkit-panel');
+assert.equal(dialog.querySelectorAll('select').length,1,'Only language select remains; shortcut scope is the current group');
 const firstShortcut=dialog.querySelector('input');firstShortcut.checked=false;firstShortcut.dispatchEvent(new UIEvent('change'));
-assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar')).info,false);
-assert.equal(dialog.querySelectorAll('input').length,8,'Only current shortcuts; recent emoji removed');
+assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar.room.7')).info,false);
+assert.equal(uiStore.has('thk-toolkit.toolbar'),false,'Changing group settings never writes a global configuration');
+assert.equal(dialog.querySelectorAll('input').length,8);
 assert.equal(uiDocument.getElementById('thkToolkit-emoji'),null);
-const scope=dialog.querySelectorAll('select')[1];scope.value='room';scope.dispatchEvent(new UIEvent('change'));
-const localShortcut=dialog.querySelector('input');localShortcut.checked=true;localShortcut.dispatchEvent(new UIEvent('change'));
-assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar.room.7')).info,true);
-assert.equal(uiWindow.__thkToolkit.toolbarPreferences('7').info,true);
-assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,false);
+assert.equal(uiWindow.__thkToolkit.toolbarPreferences('7').info,false);
+assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,undefined,'Group settings do not apply to another group');
 uiDocument.getElementById('thkToolkit-pr').click();
 assert.equal(uiDocument.getElementById('thk-toolkit-panel'),null,'PR inserts directly without a popup');
 assert.ok(editor.value.includes('[toall]\n[info]\nProject name: \nPull Request: \nSpec: \nThời gian review dự kiến: \n[/info]\n'));

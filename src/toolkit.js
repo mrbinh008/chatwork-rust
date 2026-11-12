@@ -9,7 +9,7 @@
     Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons. Keyboard shortcuts remain available.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview' });
     Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'表示するボタンを選択します。キーボードショートカットは引き続き使えます。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー' });
     function readSetting(key, fallback) { try { const value = localStorage.getItem('thk-toolkit.' + key); return value === null ? fallback : JSON.parse(value); } catch(e) { return fallback; } }
-    function writeSetting(key, value) { try { localStorage.setItem('thk-toolkit.' + key, JSON.stringify(value)); } catch(e) {} }
+    function writeSetting(key, value) { try { localStorage.setItem('thk-toolkit.' + key, JSON.stringify(value)); return true; } catch(e) { return false; } }
     const settings = {
         language: readSetting('language', 'auto')
     };
@@ -24,6 +24,18 @@
         const local = roomId ? readSetting('toolbar.room.' + roomId, {}) : {};
         return { ...(global && typeof global === 'object' ? global : {}), ...(local && typeof local === 'object' ? local : {}) };
     }
+    function defaultShortcutVisible(key, room = getRoom()) {
+        return key === 'leave' ? room.name.includes('Attendance infor_THKHN') : key === 'pr' ? room.name.includes('【HN】Source Code Review') : true;
+    }
+    function shortcutVisible(key, room = getRoom()) {
+        const value = toolbarPreferences(room.id)[key];
+        return typeof value === 'boolean' ? value : defaultShortcutVisible(key, room);
+    }
+    const settingMessages = {
+        vi:{saved:'Đã lưu và áp dụng.',failed:'Không lưu được cấu hình. Vui lòng thử lại.',overrides:'Nhóm này có cấu hình riêng, được ưu tiên hơn cấu hình chung.'},
+        en:{saved:'Saved and applied.',failed:'Could not save settings. Please try again.',overrides:'This group has its own settings, which override global settings.'},
+        ja:{saved:'保存して適用しました。',failed:'設定を保存できませんでした。再試行してください。',overrides:'このグループの個別設定は共通設定より優先されます。'}
+    };
     function element(tag, className, text) { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; }
     function button(text, action, className = 'thk-chip-btn') { const node = element('button', className, text); node.type = 'button'; node.addEventListener('click', action); return node; }
     function field(parent, label, type = 'text', value = '') {
@@ -148,26 +160,25 @@
         select.addEventListener('change', () => { settings.language = select.value; writeSetting('language', select.value); syncToolbar(); openSettings(); });
         view.body.appendChild(element('h3', 'thk-sec-title', t('shortcuts')));
         view.body.appendChild(element('p', 'thk-leave-hint', t('shortcutHint')));
-        const scopeLabel = element('label', 'thk-toolkit-label', t('scope'));
-        const scope = element('select', 'thk-input-field');
-        const roomId = getRoom().id;
-        [['all',t('allRooms')], ...(roomId ? [['room',t('thisRoom')]] : [])].forEach(([value,label]) => { const option = element('option','',label); option.value = value; scope.appendChild(option); });
-        scopeLabel.appendChild(scope); view.body.appendChild(scopeLabel);
+        const room = getRoom();
+        view.body.appendChild(element('p','thk-shortcut-room', t('thisRoom') + ': ' + (room.name || room.id || '—')));
         const grid = element('div','thk-shortcut-grid'); view.body.appendChild(grid);
-        const reset = button(t('inherit'), () => { writeSetting('toolbar.room.' + roomId, {}); drawShortcuts(); syncToolbar(); }, 'thk-btn-secondary'); view.body.appendChild(reset);
+        const status = element('p','thk-leave-hint'); status.setAttribute('role','status'); view.body.appendChild(status);
         function drawShortcuts() {
-            grid.replaceChildren(); reset.hidden = scope.value !== 'room';
-            const key = scope.value === 'room' ? 'toolbar.room.' + roomId : 'toolbar';
-            const values = scope.value === 'room' ? toolbarPreferences(roomId) : readSetting('toolbar', {});
+            grid.replaceChildren();
             shortcuts.forEach(([name]) => {
-                const label = element('label','thk-shortcut-option'); const check = element('input'); check.type = 'checkbox'; check.checked = values?.[name] !== false;
-                label.append(check, element('span','',t(name))); grid.appendChild(label);
-                check.addEventListener('change', () => {
-                    const saved = readSetting(key, {}); writeSetting(key, { ...(saved && typeof saved === 'object' ? saved : {}), [name]:check.checked }); syncToolbar();
+                const label = element('label','thk-shortcut-option'); const check = element('input'); check.type = 'checkbox';
+                check.checked = shortcutVisible(name,room); check.disabled = !room.id;
+                label.append(check,element('span','',t(name))); grid.appendChild(label);
+                check.addEventListener('change',()=>{
+                    if(getRoom().id!==room.id){view.close();return;}
+                    const key='toolbar.room.'+room.id,saved=readSetting(key,{});
+                    const ok=writeSetting(key,{...(saved && typeof saved==='object'?saved:{}),[name]:check.checked});
+                    if(!ok)drawShortcuts();syncToolbar();status.textContent=settingMessages[getLanguage()][ok?'saved':'failed'];
                 });
             });
         }
-        scope.addEventListener('change', drawShortcuts); scope.value = 'all'; drawShortcuts();
+        drawShortcuts();
         view.body.appendChild(element('h3','thk-sec-title','THK-Chat v__VERSION__'));
         view.body.appendChild(button(t('updates'), () => { view.close(); window.__thk_openUpdates?.(); }, 'thk-btn-secondary'));
     }
@@ -198,6 +209,15 @@
     }
 
     const labels = {
+        '2. Ngày và thời gian nghỉ': ['2. Leave dates and times','2. 休暇の日付と時間'],
+        'Mỗi dòng là một ngày kèm khoảng giờ nghỉ riêng.': ['Each row has its own date and time range.','各行で日付と休暇時間を個別に指定します。'],
+        'Ngày nghỉ': ['Leave date','休暇日'], 'Thêm ngày': ['Add date','日付を追加'],
+        'Thêm nhiều ngày cùng khoảng giờ': ['Add a date range with matching times','同じ時間帯で複数の日付を追加'],
+        'Thêm khoảng ngày': ['Add date range','期間を追加'], 'Đến ngày': ['End date','終了日'],
+        '3. Tag leader (có thể chọn nhiều người)': ['3. Leaders (select multiple)','3. リーダー（複数選択可）'],
+        'Vui lòng chọn ngày hợp lệ cho từng dòng.': ['Choose a valid date for each row.','各行で有効な日付を選択してください。'],
+        'Mỗi ngày chỉ chọn một khoảng giờ nghỉ.': ['Choose one time range for each date.','各日付につき1つの時間帯を選択してください。'],
+        'Chỉ chọn tối đa 366 ngày trong một lần.': ['Select up to 366 dates at a time.','一度に最大366日を選択できます。'],
         '4. Tag leader (có thể chọn nhiều người)': ['4. Leaders (select multiple)', '4. リーダー（複数選択可）'],
         '5. Lý do (Reason / 理由)': ['5. Reason', '5. 理由'],
         'Tìm tên hoặc ID leader...': ['Search leaders by name or ID...', '名前またはIDでリーダーを検索...'],
@@ -249,7 +269,7 @@
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
             let node;
             while ((node = walker.nextNode())) {
-                if (node.parentElement?.closest('.thk-preview-raw, .thk-chat-preview, .thk-mention-name, .thk-leader-option, #thkSelectedLeaders')) continue;
+                if (node.parentElement?.closest('.thk-preview-raw, .thk-chat-preview, .thk-mention-name, .thk-leader-option, #thkSelectedLeaders, .thk-file-name, .thk-file-meta, .thk-file-preview-name, .thk-file-preview-content')) continue;
                 const current = node.textContent.trim();
                 const previous = translatedNodes.get(node);
                 const source = previous?.rendered === current ? previous.source : current;
@@ -275,9 +295,8 @@
         const toolbar = document.getElementById('thk-toolbar-inline');
         if (!toolbar) return;
         toolbar.querySelector('#thkToolkit-emoji')?.remove();
-        const roomName = getRoom().name;
         const leave = toolbar.querySelector('#thkBtnLeaveRequest');
-        if (leave) { const hidden = !roomName.includes('Attendance infor_THKHN'); if (leave.hidden !== hidden) leave.hidden = hidden; if (leave.title !== t('leave')) leave.title = t('leave'); }
+        if (leave && leave.title !== t('leave')) leave.title = t('leave');
         const actions = [ ['pr','PR',insertPullRequest], ['files','files',() => window.__thkFiles?.open()], ['settings','⚙',openSettings] ];
         actions.forEach(([key,icon,action]) => {
             let node = toolbar.querySelector('#thkToolkit-' + key);
@@ -287,14 +306,16 @@
                 node.addEventListener('mousedown', e => e.preventDefault()); toolbar.appendChild(node);
             }
             if (node.title !== t(key)) { node.title = t(key); node.setAttribute('aria-label', t(key)); }
-            if (key === 'pr') { const hidden = !roomName.includes('【HN】Source Code Review'); if (node.hidden !== hidden) node.hidden = hidden; }
         });
-        const preferences = toolbarPreferences();
         shortcuts.forEach(([key,id]) => {
             const node = toolbar.querySelector('#' + id); if (!node) return;
-            const eligible = key === 'leave' ? roomName.includes('Attendance infor_THKHN') : key === 'pr' ? roomName.includes('【HN】Source Code Review') : true;
-            const hidden = !eligible || preferences[key] === false;
+            const hidden = !shortcutVisible(key);
             if (node.hidden !== hidden) node.hidden = hidden;
+            // Native Chatwork styles can force display on buttons even with [hidden].
+            if (node.style) {
+                if (hidden && node.style.getPropertyValue('display') !== 'none') node.style.setProperty('display','none','important');
+                else if (!hidden && node.style.getPropertyValue('display') === 'none') node.style.removeProperty('display');
+            }
         });
     }
     function syncCoreTheme() {
@@ -318,6 +339,8 @@
         }
         const channels = (style.color || '').match(/[\d.]+/g);
         const dark = channels && channels.slice(0,3).map(Number).reduce((a,b)=>a+b,0) > 500;
+        const theme=dark?'dark':'light';
+        if(document.documentElement.dataset.thkTheme!==theme)document.documentElement.dataset.thkTheme=theme;
         set('--thk-panel', dark ? '#24272a' : '#f5f6f7'); set('--thk-border', dark ? '#484c50' : '#dcdfe3');
         set('--thk-muted', dark ? '#b2b8bd' : '#687179'); set('--thk-code', dark ? '#202326' : '#f3f4f5');
         set('--thk-tint', dark ? '#203b33' : '#e8f5ef');
@@ -337,6 +360,7 @@
         syncToolbar();
         const observer = new MutationObserver(() => syncToolbar()); observer.observe(document.body, {childList:true,subtree:true});
         window.addEventListener('hashchange', () => { closePanel?.(); syncToolbar(); });
+        window.addEventListener('storage', event => { if (event.key?.startsWith('thk-toolkit.toolbar')) syncToolbar(); });
         setInterval(syncToolbar, 1500);
     }
     window.__thkToolkit = { getRoom, getRoomMembers: getModernMembers, translate: translateLabel, resolveAvatarUrl, close: () => closePanel?.(), openSettings, insertPullRequest, panel, getLanguage, toolbarPreferences };

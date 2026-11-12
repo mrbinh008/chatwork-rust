@@ -33,6 +33,14 @@ for (const values of [[[], '13:00', '17:00', 'Reason'], [['2026-11-12'], '', '17
     [['2026-11-12'], '13:00', '17:00', ' ']]) assert.ok(context.validateLeaveRequest(...values));
 
 
+const pairs=[{date:'2026-11-12',start:'08:00',end:'12:00'},{date:'2026-11-13',start:'13:00',end:'17:00'}];
+assert.equal(context.validateLeaveRequest(pairs,'','','Personal matter'),'');
+assert.ok(context.formatLeaveRequest('PAID_LEAVE',pairs,'','','Personal matter').includes('- Time: 08:00 - 12:00  12/11/2026\n- Time: 13:00 - 17:00  13/11/2026'));
+assert.ok(context.validateLeaveRequest([...pairs,{date:'2026-11-12',start:'09:00',end:'10:00'}],'','','Reason'));
+assert.ok(context.validateLeaveRequest([{date:'2026-02-30',start:'08:00',end:'12:00'}],'','','Reason'));
+assert.ok(context.validateLeaveRequest([{date:'2026-11-12',start:'17:00',end:'13:00'}],'','','Reason'));
+assert.throws(()=>context.getLeaveDateRange('2026-01-01','2028-01-01'));
+
 const leaderMessage = context.formatLeaveRequest('PAID_LEAVE', ['2026-11-12'], '08:00', '17:00', 'Personal matter', [
     {id:'101',name:'Leader A'}, {id:'102',name:'Leader B'}, {id:'101',name:'Duplicate'}, {id:'bad',name:'Invalid'}
 ]);
