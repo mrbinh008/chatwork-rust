@@ -27,13 +27,14 @@
                 console.error('[THK Native Client] IPC send error:', e);
             }
         },
-        notify: function(title, body, notification, target) {
+        notify: function(title, body, notification, target, icon) {
             const id = notification ? registerNativeNotification(notification, target) : null;
             window.__chatwork_ipc.send('ShowNotification', {
                 title: String(title || 'THK-Chat'),
                 body: String(body || ''),
                 id: id,
-                target: target ? getMessageHash(target) : null
+                target: target ? getMessageHash(target) : null,
+                icon: typeof icon === 'string' && icon.trim() ? icon.trim() : null
             });
         },
         setBadge: function(count) {
@@ -97,7 +98,18 @@
         notification.close = notification.cancel = function() {};
         notification.show = function() {};
         const target = getNotificationTarget(options);
-        window.__chatwork_ipc.notify(notification.title, notification.body, notification, target);
+        let icon = notification.icon || options?.icon || options?.avatar || options?.image || '';
+        if (!icon && options?.data) {
+            const aid = options.data.account_id || options.data.aid || options.data.from_id;
+            if (aid && window.CW?.application) {
+                const user = window.CW.application.domainServiceContext?.userService?.userRepository?.entities?.[aid];
+                icon = user?.avatar?.value || user?.avatarUrl?.value || user?.avatar || '';
+            }
+        }
+        if (icon && typeof window.__thkToolkit?.resolveAvatarUrl === 'function') {
+            icon = window.__thkToolkit.resolveAvatarUrl(icon);
+        }
+        window.__chatwork_ipc.notify(notification.title, notification.body, notification, target, icon);
     }
     function getNotificationTarget(options) {
         if (!options || typeof options !== 'object') return null;
@@ -112,13 +124,16 @@
 
     // ── 3. Chatwork Desktop window.NotificationAPI Hook ───────────────────────
     function createChatworkNotification(arg1, arg2, arg3, options) {
-        let title = '', body = '';
+        let title = '', body = '', icon = '';
         if (arg3 !== undefined) {
-            title = arg2 || ''; body = arg3 || '';
+            icon = arg1 || ''; title = arg2 || ''; body = arg3 || '';
         } else {
             title = arg1 || ''; body = arg2 || '';
         }
-        const notification = { title, body };
+        if (!icon && options && typeof options === 'object') {
+            icon = options.icon || options.avatar || options.image || '';
+        }
+        const notification = { title, body, icon };
         initializeNativeNotification(notification, options);
         if (typeof options === 'function') notification.onclick = options;
         else if (typeof options?.onclick === 'function') notification.onclick = options.onclick;
@@ -1533,22 +1548,22 @@
         group.addEventListener('mousedown', e => e.preventDefault());
         group.innerHTML = `
             <button type="button" class="thk-icon-btn" id="thkBtnInfo" title="Thẻ Info (Ctrl+I / Cmd+I)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
             </button>
             <button type="button" class="thk-icon-btn" id="thkBtnInfoTitle" title="Thẻ Info có Tiêu đề (Ctrl+Shift+I / Cmd+Shift+I)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="7" y1="6" x2="13" y2="6"></line><line x1="7" y1="14" x2="17" y2="14"></line></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="7" y1="6" x2="13" y2="6"></line><line x1="7" y1="14" x2="17" y2="14"></line></svg>
             </button>
             <button type="button" class="thk-icon-btn" id="thkBtnCode" title="Thẻ Code (Ctrl+K / Cmd+K)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
             </button>
             <button type="button" class="thk-icon-btn" id="thkBtnHr" title="Đường kẻ ngang [hr] (Ctrl+H / Cmd+H)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="3 2"></line></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="3 2"></line></svg>
             </button>
             <button type="button" class="thk-icon-btn thk-btn-req" id="thkBtnLeaveRequest" title="Tạo đơn nghỉ / Báo bận (Ctrl+Shift+L / Cmd+Shift+L)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M9 16l2 2 4-4"></path></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M9 16l2 2 4-4"></path></svg>
             </button>
             <button type="button" class="thk-icon-btn thk-btn-preview" id="thkBtnMarkdownPreview" title="Xem trước tin nhắn (Ctrl+Shift+P / Cmd+Shift+P)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             </button>
         `;
 
@@ -1648,6 +1663,11 @@
 
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
             const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+            // Check if custom shortcut configured via toolkit matches
+            if (window.__thk_matchCustomShortkey && window.__thk_matchCustomShortkey(e)) {
+                return;
+            }
 
             // Global shortcut: Ctrl+Shift+L / Cmd+Shift+L / Alt+L -> Leave Request
             if ((modKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) || (e.altKey && (e.key === 'L' || e.key === 'l'))) {

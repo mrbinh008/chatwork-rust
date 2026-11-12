@@ -112,7 +112,9 @@ let dialog=uiDocument.getElementById('thk-toolkit-panel');
 let language=dialog.querySelector('select');language.value='vi';language.dispatchEvent(new UIEvent('change'));
 assert.equal(leave.hidden,true);assert.equal(uiDocument.getElementById('thkToolkit-pr').hidden,false);
 dialog=uiDocument.getElementById('thk-toolkit-panel');
-assert.equal(dialog.querySelectorAll('select').length,1,'Only language select remains; shortcut scope is the current group');
+assert.equal(dialog.querySelectorAll('select').length,2,'Language select and shortcut scope select');
+const scopeSelect = dialog.querySelectorAll('select')[1];
+assert.equal(scopeSelect.value, 'room', 'Default scope is current group');
 const firstShortcut=dialog.querySelector('input');firstShortcut.checked=false;firstShortcut.dispatchEvent(new UIEvent('change'));
 assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar.room.7')).info,false);
 assert.equal(uiStore.has('thk-toolkit.toolbar'),false,'Changing group settings never writes a global configuration');
@@ -120,6 +122,10 @@ assert.equal(dialog.querySelectorAll('input').length,8);
 assert.equal(uiDocument.getElementById('thkToolkit-emoji'),null);
 assert.equal(uiWindow.__thkToolkit.toolbarPreferences('7').info,false);
 assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,undefined,'Group settings do not apply to another group');
+scopeSelect.value = 'all'; scopeSelect.dispatchEvent(new UIEvent('change'));
+const allShortcut = dialog.querySelector('input'); allShortcut.checked = false; allShortcut.dispatchEvent(new UIEvent('change'));
+assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar')).info, false, 'Changing all-groups settings writes global configuration');
+assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,false,'Global settings now apply to other groups');
 uiDocument.getElementById('thkToolkit-pr').click();
 assert.equal(uiDocument.getElementById('thk-toolkit-panel'),null,'PR inserts directly without a popup');
 assert.ok(editor.value.includes('[toall]\n[info]\nProject name: \nPull Request: \nSpec: \nThời gian review dự kiến: \n[/info]\n'));
@@ -134,4 +140,35 @@ assert.equal(editor.selectionStart,editor.value.lastIndexOf('Pull Request: ')+'P
 assert.equal(uiDocument.getElementById('thk-toolkit-panel'),null);
 assert.equal(toolbar.children.length,4,'Repeated setup does not duplicate buttons');
 assert.equal(uiDocument.getElementById('thkToolkit-compact'),null,'Compact mode removed');
-console.log('Toolkit dialog, toolbar visibility and PR insertion checks passed.');
+
+// Custom shortkey configuration tests
+const shortkeys = uiWindow.__thkToolkit.getShortkeys();
+assert.equal(shortkeys.info, 'Ctrl+I');
+assert.equal(shortkeys.preview, 'Ctrl+Shift+P');
+uiWindow.__thkToolkit.setShortkey('info', 'Ctrl+Alt+I');
+assert.equal(uiWindow.__thkToolkit.getShortkeys().info, 'Ctrl+Alt+I');
+assert.equal(JSON.parse(uiStore.get('thk-toolkit.shortkeys')).info, 'Ctrl+Alt+I');
+
+// Room Folder Tree & Auto-group tests
+const rooms = uiWindow.__thkToolkit.getAllRooms();
+assert.ok(rooms.length > 0, 'Finds available rooms');
+assert.equal(uiWindow.__thkToolkit.getRoomTree().length, 0, 'Initially no room folders');
+uiWindow.CW.application.domainServiceContext.roomService.roomRepository.entities['101'] = {
+    name: { value: 'THK / Frontend / Team A' },
+    unreadNumber: { value: 3 }
+};
+uiWindow.CW.application.domainServiceContext.roomService.roomRepository.entities['102'] = {
+    name: { value: 'THK / Frontend / Team B' },
+    unreadNumber: { value: 1 }
+};
+const didAutoGroup = uiWindow.__thkToolkit.autoGroupRooms();
+assert.equal(didAutoGroup, true, 'Auto group rooms into hierarchy');
+const tree = uiWindow.__thkToolkit.getRoomTree();
+assert.ok(tree.length > 0, 'Tree contains generated folders');
+const thkFolder = tree.find(f => f.name === 'THK');
+assert.ok(thkFolder, 'THK folder was created');
+assert.equal(thkFolder.children[0].name, 'Frontend');
+assert.ok(thkFolder.children[0].rooms.includes('101'));
+assert.ok(thkFolder.children[0].rooms.includes('102'));
+
+console.log('Toolkit dialog, toolbar visibility, custom shortkeys and room tree checks passed.');

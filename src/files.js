@@ -124,7 +124,19 @@
                 }
                 const details=make('div','thk-file-details');const name=make('button','thk-file-name thk-file-open',file.name);name.type='button';name.addEventListener('click',()=>preview(file,name));details.appendChild(name);
                 const date=file.timestamp>0 ? new Date(file.timestamp>1e12?file.timestamp:file.timestamp*1000).toLocaleDateString() : '';
-                details.appendChild(make('span','thk-file-meta',[t(file.category),sizeLabel(file.size),file.uploader || t('unknown'),date].filter(Boolean).join(' · '))); row.appendChild(details);
+                details.appendChild(make('span','thk-file-meta',[t(file.category),sizeLabel(file.size),file.uploader || t('unknown'),date].filter(Boolean).join(' · ')));
+                if (file.category === 'image') {
+                    const thumbUrl = file.thumbnail || downloadUrl(file);
+                    const thumbWrap = make('div', 'thk-file-inline-thumb-wrap');
+                    const img = make('img', 'thk-file-inline-thumb');
+                    img.src = thumbUrl; img.alt = file.name; img.loading = 'lazy';
+                    img.title = file.name;
+                    img.addEventListener('click', () => preview(file, img));
+                    img.addEventListener('error', () => thumbWrap.remove());
+                    thumbWrap.appendChild(img);
+                    details.appendChild(thumbWrap);
+                }
+                row.appendChild(details);
                 const download=make('button','thk-btn-secondary thk-file-download',t('download')); download.type='button'; download.setAttribute('aria-label',`${t('download')}: ${file.name}`);
                 download.addEventListener('click',()=>{
                     if (toolkit.getRoom().id !== room.id) { summary.textContent=t('changed'); return; }

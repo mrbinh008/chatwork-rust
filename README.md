@@ -2,6 +2,15 @@
 
 Bản tái triển khai ứng dụng Chatwork Desktop bằng Rust, thay thế hoàn toàn nền tảng Electron/Node.js bằng stack native nhẹ hơn nhiều.
 
+## Bản 2.26.2
+
+- **Notification Avatar**: Hiển thị ảnh đại diện (avatar) của người gửi trực tiếp trên thông báo desktop (Windows Toast notification và macOS banner).
+- **Cây thư mục phòng trò chuyện (Room Folder Tree)**: Tính năng nhóm các danh mục phòng trò chuyện theo cây thư mục phân cấp ở thanh sidebar bên trái. Hỗ trợ tạo thư mục con nhiều cấp, gập/mở (collapse/expand), đếm tổng tin chưa đọc, nút `⚡ Tự động gom` (phân tích tiền tố `[...]`, `【...】` hoặc dấu `/`, `-` trong tên phòng để gom nhóm tự động), và modal thêm/sửa/xóa thư mục.
+- **Tùy chọn Phạm vi cấu hình Shortcut**: Cho phép cấu hình hiển thị shortcut áp dụng cho **Nhóm hiện tại (mặc định)** hoặc **Tất cả các nhóm**, có nút khôi phục thiết lập chung (Inherit).
+- **Cài đặt Phím tắt tùy chỉnh (Custom Shortkeys)**: Cho phép ghi nhận và gán lại tổ hợp phím tắt tùy chỉnh cho từng nút công cụ (`info`, `infoTitle`, `code`, `hr`, `leave`, `preview`, `pr`, `files`) với giao diện bấm phím trực quan và lắng nghe phím toàn cục.
+- **Xem trước Thumbnail File trực tiếp**: Hiển thị ảnh thumbnail xem trước trực tiếp trên danh sách tệp đính kèm mà không cần bấm thêm một bước vào nút "Xem trước".
+- **Kích thước Icon Toolbar chuẩn hóa**: Chuẩn hóa kích thước các nút công cụ shortcut lên 32px × 32px và icon SVG 19px × 19px sắc nét, đồng bộ hoàn hảo với các nút công cụ gốc của Chatwork.
+
 ## Bản 2.26.1
 
 - Shortcut chỉ còn cấu hình cho **nhóm hiện tại**. Lựa chọn bật/tắt được áp dụng ngay, ưu tiên hơn điều kiện mặc định theo tên nhóm và giữ nguyên khi toolbar được Chatwork tạo lại. Cấu hình chung từ bản cũ vẫn được đọc làm mặc định chuyển đổi; thay đổi mới chỉ ghi vào nhóm hiện tại.

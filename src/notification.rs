@@ -113,8 +113,9 @@ pub fn show_notification(
     unread_count: u32,
     id: Option<String>,
     target: Option<String>,
+    icon: Option<&str>,
 ) {
-    info!("Notification: {} - {} (unread: {})", title, body, unread_count);
+    info!("Notification: {} - {} (unread: {}, icon: {:?})", title, body, unread_count, icon);
 
     let display_title = if title.trim().is_empty() {
         if unread_count > 0 {
@@ -130,6 +131,8 @@ pub fn show_notification(
     let safe_title: String = display_title.chars().take(100).collect();
     let safe_body: String = body.chars().take(500).collect();
 
+    let icon_to_use = resolve_notification_icon(icon);
+
     #[cfg(windows)]
     {
         let mut noti = notify_rust::Notification::new();
@@ -140,17 +143,8 @@ pub fn show_notification(
             .action("open", "Mở THK-Chat")
             .timeout(notify_rust::Timeout::Milliseconds(5000));
 
-        let mut icon_path = std::env::current_exe().unwrap_or_default();
-        icon_path.pop();
-        let ico = icon_path.join("assets").join("thk.ico");
-        let fallback_ico = icon_path.join("assets").join("chatwork.ico");
-        let ico_str = if ico.exists() {
-            ico.to_string_lossy().to_string()
-        } else {
-            fallback_ico.to_string_lossy().to_string()
-        };
-        if std::path::Path::new(&ico_str).exists() {
-            noti.icon(&ico_str);
+        if !icon_to_use.is_empty() {
+            noti.icon(&icon_to_use);
         }
 
         let show_result = noti.show();
@@ -165,6 +159,9 @@ pub fn show_notification(
                     .body(&safe_body)
                     .action("open", "Mở THK-Chat")
                     .timeout(notify_rust::Timeout::Milliseconds(5000));
+                if !icon_to_use.is_empty() {
+                    fallback_noti.icon(&icon_to_use);
+                }
                 fallback_noti.show()
             }
         };
@@ -195,6 +192,10 @@ pub fn show_notification(
             .summary(&safe_title)
             .body(&safe_body);
 
+        if !icon_to_use.is_empty() {
+            noti.icon(&icon_to_use);
+        }
+
         match noti.show() {
             Ok(h) => {
                 info!("macOS notification shown successfully: {}", safe_title);
@@ -216,11 +217,35 @@ pub fn show_notification(
 
     #[cfg(all(not(windows), not(target_os = "macos")))]
     {
-        let _ = notify_rust::Notification::new()
-            .appname(crate::app::APP_NAME)
+        let mut noti = notify_rust::Notification::new();
+        noti.appname(crate::app::APP_NAME)
             .summary(&safe_title)
-            .body(&safe_body)
-            .show();
+            .body(&safe_body);
+        if !icon_to_use.is_empty() {
+            noti.icon(&icon_to_use);
+        }
+        let _ = noti.show();
+    }
+}
+
+fn resolve_notification_icon(icon: Option<&str>) -> String {
+    if let Some(ic) = icon {
+        let trimmed = ic.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    let mut icon_path = std::env::current_exe().unwrap_or_default();
+    icon_path.pop();
+    let ico = icon_path.join("assets").join("thk.ico");
+    let fallback_ico = icon_path.join("assets").join("chatwork.ico");
+    if ico.exists() {
+        ico.to_string_lossy().to_string()
+    } else if fallback_ico.exists() {
+        fallback_ico.to_string_lossy().to_string()
+    } else {
+        String::new()
     }
 }
 

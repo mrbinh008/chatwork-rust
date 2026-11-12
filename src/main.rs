@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 #[allow(dead_code)]
 #[derive(Debug)]
 enum UserEvent {
-    ShowNotification { title: String, body: String, id: Option<String>, target: Option<String> },
+    ShowNotification { title: String, body: String, id: Option<String>, target: Option<String>, icon: Option<String> },
     NotificationInteraction { id: Option<String>, target: Option<String>, activated: bool },
     SetBadge(u32),
     Navigate(String),
@@ -149,7 +149,7 @@ fn main() {
                     Err(error) => {
                         dismissed.borrow_mut().insert(url);
                         warn!("Cannot prepare download: {}", error);
-                        let _ = proxy.send_event(UserEvent::ShowNotification { title: "Không tải được file".into(), body: error.to_string(), id: None, target: None });
+                        let _ = proxy.send_event(UserEvent::ShowNotification { title: "Không tải được file".into(), body: error.to_string(), id: None, target: None, icon: None });
                         false
                     }
                 }
@@ -162,7 +162,7 @@ fn main() {
                 if dismissed.borrow_mut().remove(&url) && !success { return; }
                 let body = if success { path.map(|path| format!("Đã lưu: {}", path.display())).unwrap_or_else(|| "File đã tải xong vào thư mục tải xuống.".into()) }
                     else { "Tải file thất bại hoặc đã bị hủy. Vui lòng thử lại.".into() };
-                let _ = proxy.send_event(UserEvent::ShowNotification { title: if success { "Đã tải file".into() } else { "Không tải được file".into() }, body, id: None, target: None });
+                let _ = proxy.send_event(UserEvent::ShowNotification { title: if success { "Đã tải file".into() } else { "Không tải được file".into() }, body, id: None, target: None, icon: None });
             }
         })
         .with_navigation_handler(|url: String| is_allowed_url(&url))
@@ -330,8 +330,8 @@ fn handle_ipc_message(msg: &str, proxy: &tao::event_loop::EventLoopProxy<UserEve
         Ok(ipc_msg) => {
             info!("IPC message: {:?}", ipc_msg);
             match ipc_msg {
-                app::IpcMessage::ShowNotification { title, body, id, target } => {
-                    let _ = proxy.send_event(UserEvent::ShowNotification { title, body, id, target });
+                app::IpcMessage::ShowNotification { title, body, id, target, icon } => {
+                    let _ = proxy.send_event(UserEvent::ShowNotification { title, body, id, target, icon });
                 }
                 app::IpcMessage::SetBadgeCount(n) => {
                     let _ = proxy.send_event(UserEvent::SetBadge(n));
@@ -484,9 +484,9 @@ fn handle_user_event(
             }
             publish_update_status(updater, webview);
         }
-        UserEvent::ShowNotification { title, body, id, target } => {
+        UserEvent::ShowNotification { title, body, id, target, icon } => {
             let unread = state.lock().unwrap().unread_count;
-            notification::show_notification(&title, &body, Some(proxy.clone()), unread, id, target);
+            notification::show_notification(&title, &body, Some(proxy.clone()), unread, id, target, icon.as_deref());
             #[cfg(windows)]
             unsafe {
                 windows_sys::Win32::UI::WindowsAndMessaging::FlashWindow(

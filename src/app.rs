@@ -54,6 +54,8 @@ pub enum IpcMessage {
         id: Option<String>,
         #[serde(default)]
         target: Option<String>,
+        #[serde(default)]
+        icon: Option<String>,
     },
     SetBadgeCount(u32),
     GoBack,

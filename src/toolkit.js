@@ -5,9 +5,9 @@
         en: { emoji:'Recent emoji', settings:'THK-Chat settings', pr:'Create Pull Request', close:'Close', insert:'Insert into chat', copy:'Copy', copied:'Copied', project:'Project', title:'Title', url:'Pull Request URL', description:'Description', language:'Language', recentCount:'Recent emoji count', recent:'Recent', common:'Emoji', missing:'Complete all fields and enter a valid http/https link.', leave:'Create leave request' },
         ja: { emoji:'最近の絵文字', settings:'THK-Chat設定', pr:'プルリクエスト作成', close:'閉じる', insert:'チャットに挿入', copy:'コピー', copied:'コピーしました', project:'プロジェクト', title:'タイトル', url:'プルリクエストURL', description:'変更内容', language:'言語', recentCount:'最近の絵文字の表示数', recent:'最近使用', common:'絵文字', missing:'すべての項目を入力し、有効なhttp/httpsリンクを指定してください。', leave:'休暇申請を作成' }
     };
-    Object.assign(translations.vi, { files:'Quản lý file', shortcuts:'Shortcut hiển thị trong nhóm', shortcutHint:'Ẩn/hiện nút trên thanh soạn tin. Phím tắt vẫn hoạt động.', scope:'Áp dụng cho', allRooms:'Tất cả nhóm', thisRoom:'Nhóm hiện tại', inherit:'Dùng thiết lập chung', updates:'Kiểm tra cập nhật app', info:'Info', infoTitle:'Info có tiêu đề', code:'Code', hr:'Đường kẻ', preview:'Xem trước' });
-    Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons. Keyboard shortcuts remain available.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview' });
-    Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'表示するボタンを選択します。キーボードショートカットは引き続き使えます。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー' });
+    Object.assign(translations.vi, { files:'Quản lý file', shortcuts:'Shortcut hiển thị trong nhóm', shortcutHint:'Ẩn/hiện nút trên thanh soạn tin và cấu hình phím tắt.', scope:'Áp dụng cho', allRooms:'Tất cả các nhóm', thisRoom:'Nhóm hiện tại', inherit:'Dùng thiết lập chung', updates:'Kiểm tra cập nhật app', info:'Info', infoTitle:'Info có tiêu đề', code:'Code', hr:'Đường kẻ', preview:'Xem trước', customKey:'Phím tắt', pressKey:'Bấm phím...', noKey:'Chưa gán', roomTree:'Cây thư mục phòng', addFolder:'+ Thư mục', autoGroup:'⚡ Tự động gom', folderName:'Tên thư mục', parentFolder:'Thư mục cha', rootFolder:'[Thư mục gốc]', selectRooms:'Chọn phòng đưa vào thư mục', save:'Lưu', delete:'Xóa', edit:'Sửa' });
+    Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons and configure shortcuts.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview', customKey:'Shortcut key', pressKey:'Press key...', noKey:'None', roomTree:'Room folders', addFolder:'+ Folder', autoGroup:'⚡ Auto group', folderName:'Folder name', parentFolder:'Parent folder', rootFolder:'[Root folder]', selectRooms:'Select rooms', save:'Save', delete:'Delete', edit:'Edit' });
+    Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'ツールバーボタンの表示とショートカットキーを設定します。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー', customKey:'ショートカット', pressKey:'キーを押してください...', noKey:'未設定', roomTree:'ルームフォルダ', addFolder:'+ フォルダ', autoGroup:'⚡ 自動グループ化', folderName:'フォルダ名', parentFolder:'親フォルダ', rootFolder:'[ルートフォルダ]', selectRooms:'ルームを選択', save:'保存', delete:'削除', edit:'編集' });
     function readSetting(key, fallback) { try { const value = localStorage.getItem('thk-toolkit.' + key); return value === null ? fallback : JSON.parse(value); } catch(e) { return fallback; } }
     function writeSetting(key, value) { try { localStorage.setItem('thk-toolkit.' + key, JSON.stringify(value)); return true; } catch(e) { return false; } }
     const settings = {
@@ -151,6 +151,97 @@
         const input = element('textarea'); input.value = text; document.body.appendChild(input); input.select();
         try { if (!document.execCommand('copy')) throw new Error(t('copy')); } finally { input.remove(); }
     }
+    const defaultShortkeys = {
+        info: 'Ctrl+I',
+        infoTitle: 'Ctrl+Shift+I',
+        code: 'Ctrl+K',
+        hr: 'Ctrl+H',
+        leave: 'Ctrl+Shift+L',
+        preview: 'Ctrl+Shift+P',
+        pr: 'Ctrl+Shift+R',
+        files: 'Ctrl+Shift+F'
+    };
+    function getShortkeys() {
+        const custom = readSetting('shortkeys', {});
+        return { ...defaultShortkeys, ...(custom && typeof custom === 'object' ? custom : {}) };
+    }
+    function setShortkey(key, combo) {
+        const custom = readSetting('shortkeys', {});
+        const updated = { ...(custom && typeof custom === 'object' ? custom : {}) };
+        if (!combo) delete updated[key]; else updated[key] = combo;
+        writeSetting('shortkeys', updated);
+    }
+    function formatKeyCombo(e) {
+        const isMac = navigator.platform?.toUpperCase().includes('MAC');
+        const parts = [];
+        if (e.ctrlKey || (!isMac && e.metaKey)) parts.push('Ctrl');
+        if (isMac && e.metaKey) parts.push('Cmd');
+        if (e.altKey) parts.push('Alt');
+        if (e.shiftKey) parts.push('Shift');
+        let key = e.key;
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return null;
+        if (key === ' ') key = 'Space';
+        else if (key && key.length === 1) key = key.toUpperCase();
+        parts.push(key);
+        return parts.join('+');
+    }
+    function matchCombo(e, combo) {
+        if (!combo || typeof combo !== 'string') return false;
+        const parts = combo.split('+').map(p => p.trim());
+        const hasCtrl = parts.includes('Ctrl') || parts.includes('Cmd');
+        const hasShift = parts.includes('Shift');
+        const hasAlt = parts.includes('Alt');
+        const keyPart = parts[parts.length - 1].toLowerCase();
+        if ((e.ctrlKey || e.metaKey) !== hasCtrl) return false;
+        if (e.shiftKey !== hasShift) return false;
+        if (e.altKey !== hasAlt) return false;
+        const eventKey = (e.key === ' ' ? 'Space' : e.key).toLowerCase();
+        return eventKey === keyPart;
+    }
+    function triggerShortcutAction(name) {
+        if (name === 'info') {
+            const btn = document.getElementById('thkBtnInfo');
+            if (btn) btn.click(); else insert('[info][/info]');
+        } else if (name === 'infoTitle') {
+            const btn = document.getElementById('thkBtnInfoTitle');
+            if (btn) btn.click(); else insert('[info][title][/title][/info]');
+        } else if (name === 'code') {
+            const btn = document.getElementById('thkBtnCode');
+            if (btn) btn.click(); else insert('[code][/code]');
+        } else if (name === 'hr') {
+            const btn = document.getElementById('thkBtnHr');
+            if (btn) btn.click(); else insert('[hr]');
+        } else if (name === 'leave') {
+            const btn = document.getElementById('thkBtnLeaveRequest');
+            if (btn) btn.click();
+        } else if (name === 'preview') {
+            const btn = document.getElementById('thkBtnMarkdownPreview');
+            if (btn) btn.click();
+        } else if (name === 'pr') {
+            const btn = document.getElementById('thkToolkit-pr');
+            if (btn) btn.click(); else insertPullRequest();
+        } else if (name === 'files') {
+            window.__thkFiles?.open();
+        }
+    }
+    window.__thk_matchCustomShortkey = function(e) {
+        const keys = getShortkeys();
+        for (const [name, combo] of Object.entries(keys)) {
+            if (matchCombo(e, combo)) {
+                e.preventDefault();
+                triggerShortcutAction(name);
+                return true;
+            }
+        }
+        return false;
+    };
+    if (typeof window.addEventListener === 'function') {
+        window.addEventListener('keydown', e => {
+            if (document.querySelector && document.querySelector('.thk-shortkey-badge.recording')) return;
+            window.__thk_matchCustomShortkey?.(e);
+        }, true);
+    }
+
     function openSettings() {
         const view = panel(t('settings'));
         const languageLabel = element('label', 'thk-toolkit-label', t('language'));
@@ -160,25 +251,134 @@
         select.addEventListener('change', () => { settings.language = select.value; writeSetting('language', select.value); syncToolbar(); openSettings(); });
         view.body.appendChild(element('h3', 'thk-sec-title', t('shortcuts')));
         view.body.appendChild(element('p', 'thk-leave-hint', t('shortcutHint')));
+
         const room = getRoom();
-        view.body.appendChild(element('p','thk-shortcut-room', t('thisRoom') + ': ' + (room.name || room.id || '—')));
-        const grid = element('div','thk-shortcut-grid'); view.body.appendChild(grid);
-        const status = element('p','thk-leave-hint'); status.setAttribute('role','status'); view.body.appendChild(status);
+        const scopeLabel = element('label', 'thk-toolkit-label', t('scope'));
+        const scope = element('select', 'thk-input-field');
+        const scopeOptions = [
+            ...(room.id ? [['room', t('thisRoom') + (room.name ? ' (' + room.name + ')' : '')]] : []),
+            ['all', t('allRooms')]
+        ];
+        scopeOptions.forEach(([val, lbl]) => {
+            const opt = element('option', '', lbl);
+            opt.value = val;
+            scope.appendChild(opt);
+        });
+        scope.value = room.id ? 'room' : 'all';
+        scopeLabel.appendChild(scope);
+        view.body.appendChild(scopeLabel);
+
+        const grid = element('div', 'thk-shortcut-grid');
+        view.body.appendChild(grid);
+        const status = element('p', 'thk-leave-hint');
+        status.setAttribute('role', 'status');
+        view.body.appendChild(status);
+
+        const reset = button(t('inherit'), () => {
+            if (room.id) {
+                writeSetting('toolbar.room.' + room.id, {});
+                drawShortcuts();
+                syncToolbar();
+                status.textContent = settingMessages[getLanguage()]['saved'];
+            }
+        }, 'thk-btn-secondary');
+        view.body.appendChild(reset);
+
         function drawShortcuts() {
             grid.replaceChildren();
+            const isRoom = scope.value === 'room';
+            reset.hidden = !isRoom;
+            const currentKeys = getShortkeys();
+            const globalPrefs = readSetting('toolbar', {});
+            const roomPrefs = room.id ? readSetting('toolbar.room.' + room.id, {}) : {};
+
             shortcuts.forEach(([name]) => {
-                const label = element('label','thk-shortcut-option'); const check = element('input'); check.type = 'checkbox';
-                check.checked = shortcutVisible(name,room); check.disabled = !room.id;
-                label.append(check,element('span','',t(name))); grid.appendChild(label);
-                check.addEventListener('change',()=>{
-                    if(getRoom().id!==room.id){view.close();return;}
-                    const key='toolbar.room.'+room.id,saved=readSetting(key,{});
-                    const ok=writeSetting(key,{...(saved && typeof saved==='object'?saved:{}),[name]:check.checked});
-                    if(!ok)drawShortcuts();syncToolbar();status.textContent=settingMessages[getLanguage()][ok?'saved':'failed'];
+                const row = element('div', 'thk-shortcut-option-row');
+                const left = element('label', 'thk-shortcut-left');
+                const check = element('input');
+                check.type = 'checkbox';
+
+                if (isRoom) {
+                    check.checked = shortcutVisible(name, room);
+                    check.disabled = !room.id;
+                } else {
+                    const val = globalPrefs[name];
+                    check.checked = typeof val === 'boolean' ? val : defaultShortcutVisible(name, room);
+                }
+
+                left.append(check, element('span', '', t(name)));
+
+                const currentCombo = currentKeys[name] || t('noKey');
+                const keyBadge = button(currentCombo, null, 'thk-shortkey-badge');
+                keyBadge.title = t('customKey');
+                let recording = false;
+
+                const onKeyRecord = e => {
+                    if (!recording) return;
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    if (e.key === 'Escape') {
+                        recording = false;
+                        keyBadge.classList.remove('recording');
+                        keyBadge.textContent = currentKeys[name] || t('noKey');
+                        window.removeEventListener('keydown', onKeyRecord, true);
+                        return;
+                    }
+                    if (e.key === 'Backspace' || e.key === 'Delete') {
+                        recording = false;
+                        keyBadge.classList.remove('recording');
+                        setShortkey(name, '');
+                        keyBadge.textContent = t('noKey');
+                        window.removeEventListener('keydown', onKeyRecord, true);
+                        status.textContent = settingMessages[getLanguage()]['saved'];
+                        return;
+                    }
+                    const combo = formatKeyCombo(e);
+                    if (combo) {
+                        recording = false;
+                        keyBadge.classList.remove('recording');
+                        setShortkey(name, combo);
+                        keyBadge.textContent = combo;
+                        window.removeEventListener('keydown', onKeyRecord, true);
+                        status.textContent = settingMessages[getLanguage()]['saved'];
+                    }
+                };
+
+                keyBadge.addEventListener('click', () => {
+                    if (recording) return;
+                    recording = true;
+                    keyBadge.classList.add('recording');
+                    keyBadge.textContent = t('pressKey');
+                    window.addEventListener('keydown', onKeyRecord, true);
+                });
+                view.cleanup.push(() => {
+                    if (recording) window.removeEventListener('keydown', onKeyRecord, true);
+                });
+
+                row.append(left, keyBadge);
+                grid.appendChild(row);
+
+                check.addEventListener('change', () => {
+                    let ok = false;
+                    if (isRoom) {
+                        if (getRoom().id !== room.id) { view.close(); return; }
+                        const key = 'toolbar.room.' + room.id;
+                        const saved = readSetting(key, {});
+                        ok = writeSetting(key, { ...(saved && typeof saved === 'object' ? saved : {}), [name]: check.checked });
+                    } else {
+                        const saved = readSetting('toolbar', {});
+                        ok = writeSetting('toolbar', { ...(saved && typeof saved === 'object' ? saved : {}), [name]: check.checked });
+                    }
+                    if (!ok) drawShortcuts();
+                    syncToolbar();
+                    status.textContent = settingMessages[getLanguage()][ok ? 'saved' : 'failed'];
                 });
             });
         }
+
+        scope.addEventListener('change', drawShortcuts);
         drawShortcuts();
+
         view.body.appendChild(element('h3','thk-sec-title','THK-Chat v__VERSION__'));
         view.body.appendChild(button(t('updates'), () => { view.close(); window.__thk_openUpdates?.(); }, 'thk-btn-secondary'));
     }
@@ -289,20 +489,395 @@
             });
         });
     }
+    function getAllRooms() {
+        const map = new Map();
+        const entities = window.CW?.application?.domainServiceContext?.roomService?.roomRepository?.entities;
+        if (entities && typeof entities === 'object') {
+            for (const [id, entity] of Object.entries(entities)) {
+                const name = entity?.name?.value || '';
+                const unread = Number(entity?.unreadNumber?.value ?? entity?.unread_num ?? 0) || 0;
+                map.set(String(id), { id: String(id), name, unread });
+            }
+        }
+        if (window.RM?.room_dat && typeof window.RM.room_dat === 'object') {
+            for (const [id, room] of Object.entries(window.RM.room_dat)) {
+                const prev = map.get(String(id));
+                map.set(String(id), { id: String(id), name: room.name || prev?.name || '', unread: Number(room.unread_num ?? prev?.unread ?? 0) || 0 });
+            }
+        }
+        if (map.size === 0 && typeof document.querySelectorAll === 'function') {
+            document.querySelectorAll('#_roomListArea [data-rid], #RoomList [data-rid], .roomListItem').forEach(el => {
+                const id = el.getAttribute('data-rid') || el.id?.match(/\d+/)?.[0];
+                const name = el.querySelector('.roomTitle, .name, [role=heading]')?.textContent?.trim() || '';
+                const unread = Number(el.querySelector('.unread, .roomBadge, ._unreadBadge')?.textContent?.trim()) || 0;
+                if (id) map.set(String(id), { id: String(id), name, unread });
+            });
+        }
+        return [...map.values()];
+    }
+
+    function getRoomTree() {
+        const raw = readSetting('roomTree', []);
+        return Array.isArray(raw) ? raw : [];
+    }
+    function saveRoomTree(tree) {
+        return writeSetting('roomTree', tree);
+    }
+
+    function computeFolderTotalUnread(folder, roomsMap) {
+        let count = 0;
+        (folder.rooms || []).forEach(rid => {
+            count += (roomsMap.get(String(rid))?.unread || 0);
+        });
+        (folder.children || []).forEach(child => {
+            count += computeFolderTotalUnread(child, roomsMap);
+        });
+        return count;
+    }
+
+    function autoGroupRooms() {
+        const rooms = getAllRooms();
+        if (!rooms.length) return false;
+        const rootFolders = [];
+        function getOrCreateFolder(list, name) {
+            let found = list.find(f => f.name.toLowerCase() === name.toLowerCase());
+            if (!found) {
+                found = {
+                    id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                    name,
+                    collapsed: false,
+                    rooms: [],
+                    children: []
+                };
+                list.push(found);
+            }
+            return found;
+        }
+
+        rooms.forEach(room => {
+            const raw = room.name.trim();
+            let parts = [];
+            const bracketMatch = raw.match(/^([\[【][^\]】]+[\]】])\s*(.*)$/);
+            if (bracketMatch) {
+                const tag = bracketMatch[1].replace(/[\[\]【】]/g, '').trim();
+                const rest = bracketMatch[2].trim();
+                if (tag) parts.push(tag);
+                if (rest) parts.push(...rest.split(/\s*[\/\-]\s*/).filter(Boolean));
+            } else {
+                parts = raw.split(/\s*[\/\-]\s*/).filter(Boolean);
+            }
+
+            if (parts.length > 1) {
+                const folderParts = parts.slice(0, parts.length > 1 ? -1 : 1);
+                let currentList = rootFolders;
+                folderParts.forEach((folderName, idx) => {
+                    const f = getOrCreateFolder(currentList, folderName);
+                    if (idx === folderParts.length - 1) {
+                        if (!f.rooms.includes(room.id)) f.rooms.push(room.id);
+                    }
+                    currentList = f.children;
+                });
+            }
+        });
+
+        if (rootFolders.length) {
+            saveRoomTree(rootFolders);
+            mountRoomTree(true);
+            return true;
+        }
+        return false;
+    }
+
+    function openFolderModal(folderToEdit = null, parentId = null) {
+        const isEdit = Boolean(folderToEdit);
+        const view = panel(isEdit ? t('edit') + ' ' + folderToEdit.name : t('addFolder'));
+        const allRooms = getAllRooms();
+        const tree = getRoomTree();
+
+        const nameInput = field(view.body, t('folderName'), 'text', folderToEdit?.name || '');
+
+        const parentLabel = element('label', 'thk-toolkit-label', t('parentFolder'));
+        const parentSelect = element('select', 'thk-input-field');
+        const rootOpt = element('option', '', t('rootFolder'));
+        rootOpt.value = '';
+        parentSelect.appendChild(rootOpt);
+
+        function flattenFolders(list, prefix = '') {
+            list.forEach(f => {
+                if (folderToEdit && f.id === folderToEdit.id) return;
+                const opt = element('option', '', prefix + '📁 ' + f.name);
+                opt.value = f.id;
+                parentSelect.appendChild(opt);
+                if (f.children?.length) flattenFolders(f.children, prefix + '— ');
+            });
+        }
+        flattenFolders(tree);
+        if (parentId) parentSelect.value = parentId;
+        parentLabel.appendChild(parentSelect);
+        view.body.appendChild(parentLabel);
+
+        view.body.appendChild(element('label', 'thk-toolkit-label', t('selectRooms')));
+        const searchInput = element('input', 'thk-input-field');
+        searchInput.placeholder = 'Tìm tên phòng...';
+        view.body.appendChild(searchInput);
+
+        const roomBox = element('div', 'thk-shortcut-grid');
+        roomBox.style.maxHeight = '200px';
+        roomBox.style.overflowY = 'auto';
+        roomBox.style.margin = '8px 0';
+        view.body.appendChild(roomBox);
+
+        const selectedRooms = new Set(folderToEdit?.rooms || []);
+        function renderRoomChoices(query = '') {
+            roomBox.replaceChildren();
+            const q = query.toLowerCase();
+            allRooms.filter(r => !q || r.name.toLowerCase().includes(q)).forEach(r => {
+                const label = element('label', 'thk-shortcut-option');
+                const chk = element('input');
+                chk.type = 'checkbox';
+                chk.checked = selectedRooms.has(r.id);
+                chk.addEventListener('change', () => {
+                    if (chk.checked) selectedRooms.add(r.id); else selectedRooms.delete(r.id);
+                });
+                label.append(chk, element('span', '', r.name || r.id));
+                roomBox.appendChild(label);
+            });
+        }
+        renderRoomChoices();
+        searchInput.addEventListener('input', () => renderRoomChoices(searchInput.value));
+
+        const saveBtn = button(t('save'), () => {
+            const name = nameInput.value.trim();
+            if (!name) return;
+            const targetTree = getRoomTree();
+
+            function removeNode(list, id) {
+                const idx = list.findIndex(node => node.id === id);
+                if (idx >= 0) return list.splice(idx, 1)[0];
+                for (const node of list) {
+                    if (node.children) {
+                        const res = removeNode(node.children, id);
+                        if (res) return res;
+                    }
+                }
+                return null;
+            }
+
+            function insertNode(list, targetParentId, nodeToInsert) {
+                if (!targetParentId) {
+                    list.push(nodeToInsert);
+                    return true;
+                }
+                for (const item of list) {
+                    if (item.id === targetParentId) {
+                        item.children = item.children || [];
+                        item.children.push(nodeToInsert);
+                        return true;
+                    }
+                    if (item.children && insertNode(item.children, targetParentId, nodeToInsert)) return true;
+                }
+                return false;
+            }
+
+            const targetParent = parentSelect.value || null;
+            if (isEdit) {
+                const existing = removeNode(targetTree, folderToEdit.id) || folderToEdit;
+                existing.name = name;
+                existing.rooms = [...selectedRooms];
+                if (!insertNode(targetTree, targetParent, existing)) targetTree.push(existing);
+            } else {
+                const newNode = {
+                    id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                    name,
+                    collapsed: false,
+                    rooms: [...selectedRooms],
+                    children: []
+                };
+                if (!insertNode(targetTree, targetParent, newNode)) targetTree.push(newNode);
+            }
+
+            saveRoomTree(targetTree);
+            mountRoomTree(true);
+            view.close();
+        }, 'thk-btn-primary');
+
+        view.footer.prepend(saveBtn);
+
+        if (isEdit) {
+            const delBtn = button(t('delete'), () => {
+                const targetTree = getRoomTree();
+                function removeRec(list, id) {
+                    const idx = list.findIndex(node => node.id === id);
+                    if (idx >= 0) { list.splice(idx, 1); return true; }
+                    for (const node of list) {
+                        if (node.children && removeRec(node.children, id)) return true;
+                    }
+                    return false;
+                }
+                removeRec(targetTree, folderToEdit.id);
+                saveRoomTree(targetTree);
+                mountRoomTree(true);
+                view.close();
+            }, 'thk-btn-secondary');
+            delBtn.style.color = '#e05252';
+            view.footer.prepend(delBtn);
+        }
+    }
+
+    function mountRoomTree(forceRerender = false) {
+        if (typeof document.querySelector !== 'function') return;
+        const sidebar = document.querySelector('#_roomListArea, #RoomList, .roomList, #_sideContent');
+        if (!sidebar) return;
+
+        let panelNode = document.getElementById('thk-room-tree-panel');
+        if (!panelNode) {
+            panelNode = element('div', '');
+            panelNode.id = 'thk-room-tree-panel';
+            if (sidebar.parentElement) sidebar.parentElement.insertBefore(panelNode, sidebar);
+            else if (typeof sidebar.prepend === 'function') sidebar.prepend(panelNode);
+            else sidebar.appendChild(panelNode);
+            forceRerender = true;
+        }
+
+        if (!forceRerender && panelNode.dataset?.rendered) {
+            const currentRoomId = getRoom().id;
+            panelNode.querySelectorAll('.thk-tree-row[data-rid]').forEach(row => {
+                const rid = row.getAttribute('data-rid');
+                if (rid === currentRoomId) row.classList.add('active'); else row.classList.remove('active');
+            });
+            return;
+        }
+
+        if (panelNode.dataset) panelNode.dataset.rendered = 'true';
+        panelNode.replaceChildren();
+
+        const tree = getRoomTree();
+        const allRooms = getAllRooms();
+        const roomsMap = new Map(allRooms.map(r => [r.id, r]));
+        const currentRoomId = getRoom().id;
+
+        const header = element('div', 'thk-tree-header');
+        const title = element('span', 'thk-tree-title', '📁 ' + t('roomTree'));
+        const actions = element('div', 'thk-tree-actions');
+
+        const addBtn = button(t('addFolder'), () => openFolderModal(), 'thk-tree-btn');
+        const autoBtn = button(t('autoGroup'), () => {
+            if (autoGroupRooms()) {
+                mountRoomTree(true);
+            }
+        }, 'thk-tree-btn');
+
+        actions.append(addBtn, autoBtn);
+        header.append(title, actions);
+        panelNode.appendChild(header);
+
+        if (!tree.length) {
+            const emptyHint = element('div', 'thk-leave-hint', 'Chưa có thư mục. Bấm "+ Thư mục" hoặc "⚡ Tự động gom" để tạo cây thư mục.');
+            emptyHint.style.padding = '6px 0';
+            panelNode.appendChild(emptyHint);
+            return;
+        }
+
+        function renderFolder(folder, container) {
+            const node = element('div', 'thk-tree-node');
+            const row = element('div', 'thk-tree-row');
+            const totalUnread = computeFolderTotalUnread(folder, roomsMap);
+
+            const label = element('div', 'thk-tree-label');
+            const icon = element('span', '', folder.collapsed ? '📁 ' : '📂 ');
+            const nameSpan = element('span', '', folder.name);
+            label.append(icon, nameSpan);
+            row.appendChild(label);
+
+            if (totalUnread > 0) {
+                const badge = element('span', 'thk-tree-badge', String(totalUnread));
+                row.appendChild(badge);
+            }
+
+            const tools = element('div', 'thk-tree-tools');
+            const addChildBtn = button('+', (e) => { e.stopPropagation(); openFolderModal(null, folder.id); }, 'thk-tree-tool-btn');
+            addChildBtn.title = 'Thêm thư mục con';
+            const editBtn = button('✎', (e) => { e.stopPropagation(); openFolderModal(folder); }, 'thk-tree-tool-btn');
+            editBtn.title = t('edit');
+            const delBtn = button('✕', (e) => {
+                e.stopPropagation();
+                const cur = getRoomTree();
+                function removeById(list, id) {
+                    const idx = list.findIndex(item => item.id === id);
+                    if (idx >= 0) { list.splice(idx, 1); return true; }
+                    for (const item of list) {
+                        if (item.children && removeById(item.children, id)) return true;
+                    }
+                    return false;
+                }
+                removeById(cur, folder.id);
+                saveRoomTree(cur);
+                mountRoomTree(true);
+            }, 'thk-tree-tool-btn');
+            delBtn.title = t('delete');
+
+            tools.append(addChildBtn, editBtn, delBtn);
+            row.appendChild(tools);
+
+            row.addEventListener('click', () => {
+                folder.collapsed = !folder.collapsed;
+                saveRoomTree(tree);
+                mountRoomTree(true);
+            });
+            node.appendChild(row);
+
+            if (!folder.collapsed) {
+                const sublist = element('ul', 'thk-tree-sublist');
+                (folder.children || []).forEach(child => renderFolder(child, sublist));
+                (folder.rooms || []).forEach(rid => {
+                    const roomInfo = roomsMap.get(String(rid)) || { id: rid, name: 'Room ' + rid, unread: 0 };
+                    const roomRow = element('li', 'thk-tree-row' + (String(rid) === currentRoomId ? ' active' : ''));
+                    roomRow.setAttribute('data-rid', String(rid));
+                    const roomLabel = element('div', 'thk-tree-label');
+                    roomLabel.append(element('span', '', '💬 '), element('span', '', roomInfo.name));
+                    roomRow.appendChild(roomLabel);
+
+                    if (roomInfo.unread > 0) {
+                        roomRow.appendChild(element('span', 'thk-tree-badge', String(roomInfo.unread)));
+                    }
+
+                    roomRow.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (window.RM?.selectRoom) window.RM.selectRoom(rid);
+                        else window.location.hash = '#!rid' + rid;
+                    });
+                    sublist.appendChild(roomRow);
+                });
+                node.appendChild(sublist);
+            }
+
+            container.appendChild(node);
+        }
+
+        const treeContainer = element('div', 'thk-tree-container');
+        tree.forEach(f => renderFolder(f, treeContainer));
+        panelNode.appendChild(treeContainer);
+    }
+
     function syncToolbar() {
         syncCoreTheme();
         localize();
+        mountRoomTree();
         const toolbar = document.getElementById('thk-toolbar-inline');
         if (!toolbar) return;
         toolbar.querySelector('#thkToolkit-emoji')?.remove();
         const leave = toolbar.querySelector('#thkBtnLeaveRequest');
         if (leave && leave.title !== t('leave')) leave.title = t('leave');
-        const actions = [ ['pr','PR',insertPullRequest], ['files','files',() => window.__thkFiles?.open()], ['settings','⚙',openSettings] ];
-        actions.forEach(([key,icon,action]) => {
+        const actions = [
+            ['pr', '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>', insertPullRequest],
+            ['files', '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>', () => window.__thkFiles?.open()],
+            ['settings', '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>', openSettings]
+        ];
+        actions.forEach(([key,iconSvg,action]) => {
             let node = toolbar.querySelector('#thkToolkit-' + key);
             if (!node) {
-                node = button(icon, action, 'thk-icon-btn'); node.id = 'thkToolkit-' + key;
-                if (key === 'files') node.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z"/></svg>';
+                node = button('', action, 'thk-icon-btn'); node.id = 'thkToolkit-' + key;
+                node.innerHTML = iconSvg;
                 node.addEventListener('mousedown', e => e.preventDefault()); toolbar.appendChild(node);
             }
             if (node.title !== t(key)) { node.title = t(key); node.setAttribute('aria-label', t(key)); }
@@ -311,7 +886,6 @@
             const node = toolbar.querySelector('#' + id); if (!node) return;
             const hidden = !shortcutVisible(key);
             if (node.hidden !== hidden) node.hidden = hidden;
-            // Native Chatwork styles can force display on buttons even with [hidden].
             if (node.style) {
                 if (hidden && node.style.getPropertyValue('display') !== 'none') node.style.setProperty('display','none','important');
                 else if (!hidden && node.style.getPropertyValue('display') === 'none') node.style.removeProperty('display');
@@ -340,7 +914,9 @@
         const channels = (style.color || '').match(/[\d.]+/g);
         const dark = channels && channels.slice(0,3).map(Number).reduce((a,b)=>a+b,0) > 500;
         const theme=dark?'dark':'light';
-        if(document.documentElement.dataset.thkTheme!==theme)document.documentElement.dataset.thkTheme=theme;
+        if(document.documentElement.dataset?.thkTheme!==theme) {
+            if (document.documentElement.dataset) document.documentElement.dataset.thkTheme=theme;
+        }
         set('--thk-panel', dark ? '#24272a' : '#f5f6f7'); set('--thk-border', dark ? '#484c50' : '#dcdfe3');
         set('--thk-muted', dark ? '#b2b8bd' : '#687179'); set('--thk-code', dark ? '#202326' : '#f3f4f5');
         set('--thk-tint', dark ? '#203b33' : '#e8f5ef');
@@ -356,13 +932,34 @@
                 '.thk-toolkit-check{display:flex;gap:8px;align-items:center}.thk-emoji-choice{font-size:20px!important;min-width:40px}',
             ].join('\n') + '\n' + (window.__thk_ui_css || ''); document.head.appendChild(style);
         }
-        document.documentElement.classList.remove('thk-compact');
+        if (document.documentElement?.classList?.remove) document.documentElement.classList.remove('thk-compact');
         syncToolbar();
-        const observer = new MutationObserver(() => syncToolbar()); observer.observe(document.body, {childList:true,subtree:true});
-        window.addEventListener('hashchange', () => { closePanel?.(); syncToolbar(); });
-        window.addEventListener('storage', event => { if (event.key?.startsWith('thk-toolkit.toolbar')) syncToolbar(); });
-        setInterval(syncToolbar, 1500);
+        const observer = typeof MutationObserver === 'function' ? new MutationObserver(() => syncToolbar()) : null;
+        if (observer) observer.observe(document.body, {childList:true,subtree:true});
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('hashchange', () => { closePanel?.(); syncToolbar(); });
+            window.addEventListener('storage', event => { if (event.key?.startsWith('thk-toolkit.toolbar')) syncToolbar(); });
+        }
+        if (typeof setInterval === 'function') setInterval(syncToolbar, 1500);
     }
-    window.__thkToolkit = { getRoom, getRoomMembers: getModernMembers, translate: translateLabel, resolveAvatarUrl, close: () => closePanel?.(), openSettings, insertPullRequest, panel, getLanguage, toolbarPreferences };
+    window.__thkToolkit = {
+        getRoom,
+        getRoomMembers: getModernMembers,
+        translate: translateLabel,
+        resolveAvatarUrl,
+        close: () => closePanel?.(),
+        openSettings,
+        insertPullRequest,
+        panel,
+        getLanguage,
+        toolbarPreferences,
+        getShortkeys,
+        setShortkey,
+        getAllRooms,
+        autoGroupRooms,
+        mountRoomTree,
+        getRoomTree,
+        saveRoomTree
+    };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
