@@ -2,6 +2,34 @@
 
 Bản tái triển khai ứng dụng Chatwork Desktop bằng Rust, thay thế hoàn toàn nền tảng Electron/Node.js bằng stack native nhẹ hơn nhiều.
 
+## Bản 2.26.0
+
+- OTA lấy bản stable mới nhất từ GitHub Releases của `mrbinh008/chatwork-rust`. App kiểm tra ngầm sau khi mở và mỗi 6 giờ; có thể mở **Help → Check for Updates** hoặc nút kiểm tra trong Cài đặt.
+- Khi có bản mới: **Tải bản cập nhật → Cập nhật và khởi động lại**. App kiểm tra kích thước, SHA-256 do GitHub cung cấp, cấu trúc gói và phiên bản trước khi cài. Windows thay các file app tại thư mục đang chạy; macOS thay `.app` tại vị trí hiện tại. Giữ bản cũ để khôi phục nếu thay thế thất bại; không thay dữ liệu đăng nhập hay cấu hình.
+- Chỉ nhận đúng gói `THK-Chat-vX.Y.Z-Windows-x64.zip` hoặc `THK-Chat-vX.Y.Z-macOS-Universal.tar.gz`. Repository và release phải công khai; không nhúng GitHub token vào app. Windows cần chạy bản đóng gói `THK-Chat.exe`; Mac cần chạy `.app` trong thư mục có quyền ghi, ví dụ Applications, thay vì chạy trong DMG.
+- Quản lý file theo nhóm: **Tất cả / Ảnh / Tài liệu / Video / Khác**, tìm tên/người tải lên, tải file qua hộp thoại lưu native. Danh sách dùng phản hồi hiện có của Chatwork; chưa bổ sung phân trang vượt giới hạn server. Khi không đọc được API, giao diện dùng các file đính kèm đã tải trong phần chat và ghi rõ nguồn dữ liệu.
+- Cài đặt chọn shortcut hiển thị cho tất cả nhóm hoặc riêng nhóm hiện tại; có thể quay về thiết lập chung. Nút Cài đặt luôn được giữ để khôi phục các nút đã ẩn. Các điều kiện hiển thị PR/đơn nghỉ theo tên nhóm vẫn được áp dụng.
+- UI lấy màu, nền, font từ Chatwork hiện tại; hỗ trợ sáng/tối và cửa sổ nhỏ. **Emoji gần đây đã được bỏ**, bao gồm theo dõi lịch sử và nút emoji bổ sung; vẫn dùng emoji gốc của Chatwork.
+
+### Phát hành OTA
+
+Cài bản 2.26.0 một lần để có updater. Các lần sau chỉ cần phát hành phiên bản mới trên GitHub:
+
+1. Đổi version trong `Cargo.toml`, đồng bộ `Cargo.lock` bằng `cargo check` và commit mã.
+2. Tạo và push tag trùng phiên bản, ví dụ `v2.26.1`.
+3. Workflow `.github/workflows/release.yml` build/test Windows và Mac Universal, rồi tạo release có đủ các asset sau khi cả hai job đạt. Nếu build lỗi, release chưa được công bố. Có thể chạy workflow thủ công để lấy artifact mà chưa phát hành.
+
+GitHub cung cấp trường `digest: sha256:...` cho asset qua [Releases API](https://docs.github.com/en/rest/releases/releases). Không dùng file source ZIP tự sinh của GitHub làm gói cập nhật. Log và bản dự phòng nằm trong thư mục `Chatwork/updates` cạnh file cấu hình. Bản này chưa được push/tag hay phát hành lên GitHub từ phiên làm việc này.
+
+Kiểm tra bổ sung:
+
+```powershell
+node examples/files-regression.cjs
+node examples/toolkit-regression.cjs
+./build.ps1
+powershell -ExecutionPolicy Bypass -File ./examples/ota-windows-regression.ps1
+```
+
 ## 🏗️ Kiến trúc
 
 | Thành phần | Electron (gốc) | Rust (bản mới) |
@@ -153,7 +181,7 @@ App hoạt động như một **thin native wrapper** xung quanh WebView2:
 - Copy code: nút Copy ở góc khối code.
 - Link tin nhắn mở trong cửa sổ hiện tại; click trực tiếp vào thông báo hoặc nút mở thông báo khôi phục cửa sổ và gọi xử lý click của đúng thông báo. Khi có dữ liệu phòng/tin nhắn, dùng dữ liệu đó để điều hướng.
 
-Phần **File manager** trong tài liệu tham khảo chưa được tích hợp theo phạm vi đã thống nhất.
+Phần **File manager** được bổ sung từ 2.26.0 với phân loại file và tìm kiếm; xem giới hạn nguồn dữ liệu ở mục phiên bản trên.
 
 Kiểm tra hồi quy JavaScript (cần Node.js):
 
