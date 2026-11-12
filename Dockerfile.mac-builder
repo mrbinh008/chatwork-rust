@@ -1,0 +1,31 @@
+FROM ubuntu:noble
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    ca-certificates \
+    libssl-dev \
+    pkg-config \
+    clang \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=crazymax/osxcross:latest /osxcross /osxcross
+
+ENV PATH="/osxcross/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/osxcross/lib:${LD_LIBRARY_PATH}"
+ENV CC_aarch64_apple_darwin="aarch64-apple-darwin25.1-clang"
+ENV CXX_aarch64_apple_darwin="aarch64-apple-darwin25.1-clang++"
+ENV CC_x86_64_apple_darwin="x86_64-apple-darwin25.1-clang"
+ENV CXX_x86_64_apple_darwin="x86_64-apple-darwin25.1-clang++"
+ENV CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="aarch64-apple-darwin25.1-clang"
+ENV CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="x86_64-apple-darwin25.1-clang"
+
+# Install Rust with Darwin targets
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
+    --target aarch64-apple-darwin,x86_64-apple-darwin
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /workspace

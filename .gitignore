@@ -1,0 +1,24 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Build output & binary installers (uploaded to GitHub Releases)
+/dist/
+*.exe
+*.dll
+
+# OS & Environment artifacts
+/Microsoft/
+.DS_Store
+Thumbs.db
+*.log
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary scripts
+mac_compile_inner.sh
