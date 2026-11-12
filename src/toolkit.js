@@ -626,34 +626,21 @@
             }
         });
     }
+    let systemThemeQuery;
     function syncCoreTheme() {
-        if (typeof window.getComputedStyle !== 'function') return;
-        const chat = getEditor(); if (!chat) return;
-        const style = window.getComputedStyle(chat);
-        const root = document.documentElement.style;
-        const set = (key,value) => { if (value && root.getPropertyValue(key) !== value) root.setProperty(key,value); };
-        const painted = start => {
-            for (let node=start; node; node=node.parentElement) {
-                const color = window.getComputedStyle(node).backgroundColor;
-                if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') return color;
-            }
-            return '';
-        };
-        set('--thk-text', style.color); set('--thk-font', style.fontFamily); set('--thk-surface', painted(chat));
-        const nativeSend = document.querySelector('#_sendButton, #_chatSendButton, #CurrentSelectedRoom button[data-testid*="send"], #CurrentSelectedRoom button[aria-label="送信"]');
-        if (nativeSend && !nativeSend.disabled) {
-            const color = window.getComputedStyle(nativeSend).backgroundColor;
-            if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') set('--thk-accent', color);
+        // The OS owns appearance. Never infer it from a web element: the site
+        // may still be painting its previous theme while a popup is opening.
+        const root = document.documentElement;
+        if (!root?.dataset) return;
+        if (!systemThemeQuery && typeof window.matchMedia === 'function') {
+            systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            if (systemThemeQuery.addEventListener) systemThemeQuery.addEventListener('change', syncCoreTheme);
+            else systemThemeQuery.addListener?.(syncCoreTheme);
         }
-        const channels = (style.color || '').match(/[\d.]+/g);
-        const dark = channels && channels.slice(0,3).map(Number).reduce((a,b)=>a+b,0) > 500;
-        const theme=dark?'dark':'light';
-        if(document.documentElement.dataset?.thkTheme!==theme) {
-            if (document.documentElement.dataset) document.documentElement.dataset.thkTheme=theme;
-        }
-        set('--thk-panel', dark ? '#24272a' : '#f5f6f7'); set('--thk-border', dark ? '#484c50' : '#dcdfe3');
-        set('--thk-muted', dark ? '#b2b8bd' : '#687179'); set('--thk-code', dark ? '#202326' : '#f3f4f5');
-        set('--thk-tint', dark ? '#203b33' : '#e8f5ef');
+        const theme = systemThemeQuery?.matches ? 'dark' : 'light';
+        if (root.dataset.thkTheme !== theme) root.dataset.thkTheme = theme;
+        const platform = /Mac/i.test(navigator.platform || navigator.userAgent || '') ? 'mac' : 'windows';
+        if (root.dataset.thkPlatform !== platform) root.dataset.thkPlatform = platform;
     }
     function start() {
         if (!document.getElementById('thk-toolkit-styles')) {

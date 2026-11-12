@@ -23,6 +23,8 @@ use tao::{
 #[cfg(windows)]
 use tao::platform::windows::WindowExtWindows;
 use wry::{WebView, WebViewBuilder};
+#[cfg(windows)]
+use wry::WebViewBuilderExtWindows;
 use tracing::{info, warn, error};
 use tracing_subscriber::EnvFilter;
 use std::sync::{Arc, Mutex};
@@ -122,11 +124,14 @@ fn main() {
     let mut download_manager = downloads::DownloadManager::new(config.download_dir.as_deref());
     let save_dialog = save_dialog::SaveDialog::new(&window);
     let dismissed_downloads = std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashSet::<String>::new()));
-    let webview = match WebViewBuilder::new()
+    let webview_builder = WebViewBuilder::new();
+    #[cfg(windows)]
+    let webview_builder = webview_builder.with_theme(wry::Theme::Auto);
+    let webview = match webview_builder
         .with_url(&initial_url)
         .with_user_agent(USER_AGENT)
         .with_hotkeys_zoom(false)
-        .with_background_color((255, 255, 255, 255))
+        .with_background_color(if window.theme() == tao::window::Theme::Dark { (32,32,32,255) } else { (255,255,255,255) })
         .with_devtools(true)
         .with_initialization_script(&build_init_script(zoom))
         .with_ipc_handler({
@@ -233,6 +238,10 @@ fn main() {
             // ── Window events ──────────────────────────────────────────────
             Event::WindowEvent { event, window_id, .. } if window_id == window.id() => {
                 match event {
+                    WindowEvent::ThemeChanged(theme) => {
+                        let color = if theme == tao::window::Theme::Dark { (32,32,32,255) } else { (255,255,255,255) };
+                        let _ = webview.set_background_color(color);
+                    }
                     WindowEvent::CloseRequested => {
                         window.set_visible(false);
                         info!("Window minimized to tray");

@@ -11,9 +11,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.thk.chat</string>
     <key>CFBundleVersion</key>
-    <string>2.26.4</string>
+    <string>2.26.5</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.26.4</string>
+    <string>2.26.5</string>
     <key>CFBundleExecutable</key>
     <string>chatwork</string>
     <key>CFBundleIconFile</key>

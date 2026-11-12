@@ -4,7 +4,7 @@
 
 Windows sử dụng **Rust + WebView2**; macOS sử dụng **Swift + AppKit + WKWebView**. Ứng dụng dùng WebView của hệ thống, không đóng gói Electron hoặc Node.js để chạy.
 
-**Phiên bản trong mã nguồn: 2.26.4** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
+**Phiên bản trong mã nguồn: 2.26.5** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
 
 ## Mục lục
 
@@ -185,7 +185,7 @@ Danh sách file sử dụng phản hồi Chatwork hiện có. Khi không đọc 
 - **Thông báo desktop:** tích hợp thông báo hệ điều hành, hỗ trợ ảnh người gửi khi có dữ liệu phù hợp. Bấm thông báo để mở lại cửa sổ và đi đến phòng/tin nhắn tương ứng khi có thông tin điều hướng.
 - **Unread badge:** hiển thị số chưa đọc qua tiêu đề/tray trên Windows và Dock trên Mac.
 - **Cửa sổ:** menu tải lại trang, quay lại/tiến tới và zoom. Bản Mac có menu bar, phím Command và thao tác toàn màn hình native.
-- **Giao diện:** Toolkit lấy màu và font từ Chatwork, có hỗ trợ sáng/tối và nội dung popup cuộn trên cửa sổ nhỏ.
+- **Giao diện:** tự động theo chế độ sáng/tối của máy và đổi ngay khi hệ điều hành đổi theme. Windows dùng tone Fluent trung tính; macOS dùng tone AppKit và font hệ thống. Popup và công cụ dùng chung bảng màu để chữ, biểu tượng và nền dễ nhìn.
 
 Để cấu hình thanh công cụ, mở **⚙**, chọn phạm vi rồi bật/tắt từng nút. Để đổi phím tắt, bấm ô tổ hợp phím hiện tại và nhấn tổ hợp mới; `Esc` hủy ghi nhận. `Backspace`/`Delete` xóa phần gán riêng để trở về tổ hợp mặc định.
 
@@ -304,7 +304,7 @@ Trên Mac:
 
 ```bash
 bash mac/test-native.sh
-node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.4-macOS-Universal/THK-Chat.app
+node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.5-macOS-Universal/THK-Chat.app
 ```
 
 Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu phiên bản, hai kiến trúc, toàn bộ script/CSS, updater và icon trong gói với mã nguồn.
@@ -320,7 +320,7 @@ Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu
 
 1. Đồng bộ phiên bản trong `Cargo.toml`, `Cargo.lock`, `mac/Info.plist`, giá trị mặc định của `installer.nsi` và phần giới thiệu README.
 2. Chạy kiểm thử, commit và push code.
-3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.4`.
+3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.5`.
 4. Kiểm tra Actions và các asset trên trang Releases.
 
 Updater sử dụng gói `THK-Chat-v<version>-Windows-x64.zip` hoặc `THK-Chat-v<version>-macOS-Universal.tar.gz`. Các file SHA256 được phát hành cùng bộ cài và archive.
