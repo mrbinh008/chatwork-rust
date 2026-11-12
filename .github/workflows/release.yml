@@ -1,0 +1,73 @@
+name: Release Windows and macOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify release tag
+        shell: pwsh
+        run: |
+          $version = ([regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"([^"]+)"')).Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Git tag and Cargo version must match' }
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+      - name: Build and test Windows
+        shell: pwsh
+        run: ./build.ps1 -Online
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            dist/THK-ChatSetup-v*.exe
+            dist/THK-Chat-v*-Windows-x64.zip
+            dist/THK-Chat-v*-Windows-SHA256.txt
+          if-no-files-found: error
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build and test macOS
+        run: |
+          version=$(awk -F '"' '/^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then echo 'Git tag and Cargo version must match'; exit 1; fi
+          cargo test --locked
+          bash build-mac.sh --universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            dist/THK-Chat-v*-macOS-Universal.tar.gz
+            dist/THK-Chat-v*-macOS-Universal.zip
+            dist/THK-Chat-v*-macOS-Universal.dmg
+            dist/THK-Chat-v*-macOS-SHA256.txt
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --title "THK-Chat $GITHUB_REF_NAME"

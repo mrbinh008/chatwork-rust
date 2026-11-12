@@ -1,5 +1,5 @@
 # Build, verify, and package THK Desktop for Windows.
-param([switch]$SkipTests)
+param([switch]$SkipTests, [switch]$Online)
 $ErrorActionPreference = 'Stop'
 $ProjectDir = $PSScriptRoot
 $ReleaseDir = Join-Path $ProjectDir 'target\release'
@@ -8,6 +8,11 @@ if (-not $AppVersion) { throw 'Cannot determine app version' }
 $PackageDir = Join-Path $ProjectDir "dist\THK-Chat-v$AppVersion-Windows-x64"
 
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+$CargoNetwork = if ($Online) { @() } else { @('--offline') }
+$RustInfo = & rustc -vV
+if ($LASTEXITCODE -ne 0) { throw 'Cannot determine Rust host' }
+$IsGnu = [bool]($RustInfo -match '^host: .*windows-gnu$')
+$LinkFlags = if ($IsGnu) { @('-C','linker=rust-lld','-C','linker-flavor=ld.lld') } else { @() }
 # Apply LLD to the application link only. Dependencies retain their normal toolchain.
 # This also avoids rebuilding every dependency merely to change the final linker.
 function Invoke-Cargo([string[]]$CargoArguments) {
@@ -23,7 +28,9 @@ try {
     if (-not $SkipTests) {
         $previousPreference = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        $artifacts = & cargo rustc --tests --locked --offline --message-format=json-render-diagnostics -- -C linker=rust-lld -C linker-flavor=ld.lld
+        $testArgs = @('rustc','--tests','--locked','--message-format=json-render-diagnostics') + $CargoNetwork
+        if ($LinkFlags.Count -gt 0) { $testArgs += @('--') + $LinkFlags }
+        $artifacts = & cargo @testArgs
         $compileCode = $LASTEXITCODE
         $ErrorActionPreference = $previousPreference
         if ($compileCode -ne 0) { throw 'Test compilation failed' }
@@ -37,7 +44,9 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "Tests failed: $testExecutable" }
         }
     }
-    Invoke-Cargo @('rustc', '--release', '--locked', '--offline', '--', '-C', 'linker=rust-lld', '-C', 'linker-flavor=ld.lld')
+    $releaseArgs = @('rustc','--release','--locked') + $CargoNetwork
+    if ($LinkFlags.Count -gt 0) { $releaseArgs += @('--') + $LinkFlags }
+    Invoke-Cargo $releaseArgs
     $binary = Join-Path $ReleaseDir 'chatwork.exe'
     if (-not (Test-Path -LiteralPath $binary)) { throw 'Release executable missing' }
 
@@ -61,6 +70,10 @@ try {
     } else { Write-Warning 'NSIS unavailable; portable package was created.' }
     $portable = Join-Path $ProjectDir "dist\THK-Chat-v$AppVersion-Windows-x64.zip"
     Compress-Archive -Path (Join-Path $PackageDir '*') -DestinationPath $portable -Force
+    $hashFiles = @($portable)
+    $versionedSetup = Join-Path $ProjectDir "dist\THK-ChatSetup-v$AppVersion.exe"
+    if (Test-Path -LiteralPath $versionedSetup) { $hashFiles += $versionedSetup }
+    $hashFiles | ForEach-Object { $hash = Get-FileHash -LiteralPath $_ -Algorithm SHA256; "$($hash.Hash.ToLower())  $([IO.Path]::GetFileName($_))" } | Set-Content -LiteralPath (Join-Path $ProjectDir "dist\THK-Chat-v$AppVersion-Windows-SHA256.txt") -Encoding ASCII
     Write-Host "Built THK-Chat $AppVersion"
     Write-Host "Application: $PackageDir\THK-Chat.exe"
     Write-Host "Portable ZIP: $portable"

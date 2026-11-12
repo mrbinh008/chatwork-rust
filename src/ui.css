@@ -1,9 +1,9 @@
 :root {
   --thk-surface: #fff; --thk-panel: #f3f6fc; --thk-text: #202124;
-  --thk-muted: #64748b; --thk-border: #e5d8d8; --thk-accent: #E53935;
-  --thk-tint: #fff0f0; --thk-code: #eef2f6;
+  --thk-muted: #687179; --thk-border: #dcdfe3; --thk-accent: #00865d;
+  --thk-tint: #e8f5ef; --thk-code: #f3f4f5; --thk-font:system-ui,sans-serif;
 }
-body.dark { --thk-surface:#252528; --thk-panel:#1c1c1f; --thk-text:#f6f2f2; --thk-muted:#bcaeb0; --thk-border:#4a3c40; --thk-tint:#4a242a; --thk-code:#1c1c1f; }
+:root:has(body.dark) { --thk-surface:#292c30; --thk-panel:#24272a; --thk-text:#eef0f2; --thk-muted:#b2b8bd; --thk-border:#484c50; --thk-tint:#203b33; --thk-code:#202326; }
 #thk-toolbar-inline {
   display:inline-flex!important; align-items:center!important; flex:0 0 auto!important;
   gap:2px!important; height:30px!important; margin:0 0 0 6px!important;
@@ -109,3 +109,51 @@ body.dark { --thk-surface:#252528; --thk-panel:#1c1c1f; --thk-text:#f6f2f2; --th
 
 .thk-code-container > .thk-code-copy-btn { width:26px!important; height:26px!important; min-width:26px!important; padding:5px!important; justify-content:center!important; line-height:0!important; }
 .thk-code-container > .thk-code-copy-btn svg { display:block!important; flex:0 0 15px!important; }
+
+.thk-update-overlay { position:fixed; inset:0; z-index:2147483646; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(18,31,52,.48); backdrop-filter:blur(3px); }
+.thk-update-overlay *, .thk-update-banner * { box-sizing:border-box; }
+.thk-update-box { display:flex; flex-direction:column; width:min(600px,100%); max-height:calc(100dvh - 40px); overflow:hidden; border:1px solid var(--thk-border); border-radius:14px; background:var(--thk-surface); color:var(--thk-text); box-shadow:0 24px 80px #0c1c3647; font:14px/1.6 system-ui,sans-serif; }
+.thk-update-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; background:var(--thk-tint); border-bottom:1px solid var(--thk-border); }
+.thk-update-header h2 { margin:0; font:600 17px/1.4 system-ui,sans-serif; }
+.thk-update-close { display:inline-flex; align-items:center; justify-content:center; flex:0 0 30px; width:30px; height:30px; padding:0; border:0; border-radius:6px; color:var(--thk-muted); background:transparent; cursor:pointer; font:24px/1 system-ui; }
+.thk-update-close:hover { background:var(--thk-panel); }
+.thk-update-body { min-height:0; overflow:auto; padding:20px; overflow-wrap:anywhere; }
+.thk-update-version { color:var(--thk-muted); font-size:12px; }
+.thk-update-status { margin:16px 0 8px; font-weight:600; }
+.thk-update-error { padding:12px; background:var(--thk-tint); border-radius:8px; white-space:pre-wrap; }
+.thk-update-body h3 { margin:18px 0 8px; font:600 13px/1.5 system-ui; }
+.thk-update-notes { margin:0 0 14px; padding:12px; max-height:220px; overflow:auto; border:1px solid var(--thk-border); border-radius:8px; background:var(--thk-panel); color:var(--thk-text); white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.6 system-ui,sans-serif; }
+.thk-update-hint { color:var(--thk-muted); font-size:12px; }
+.thk-update-progress { display:block; width:100%; height:10px; margin:14px 0; accent-color:var(--thk-accent); }
+.thk-update-link { color:var(--thk-accent); text-decoration:underline; font-size:12px; }
+.thk-update-footer { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; padding:14px 20px; background:var(--thk-panel); border-top:1px solid var(--thk-border); }
+.thk-update-primary,.thk-update-secondary { min-height:36px; padding:8px 13px; border-radius:7px; cursor:pointer; font:600 12px/1.4 system-ui; }
+.thk-update-primary { border:1px solid var(--thk-accent); background:var(--thk-accent); color:#fff; }
+.thk-update-primary:disabled { opacity:.55; cursor:wait; }
+.thk-update-secondary { border:1px solid var(--thk-border); background:var(--thk-surface); color:var(--thk-text); }
+.thk-update-banner { position:fixed; right:20px; bottom:20px; z-index:2147483644; display:flex; flex-wrap:wrap; align-items:center; gap:10px; max-width:calc(100vw - 40px); padding:12px 14px; border:1px solid var(--thk-border); border-radius:12px; background:var(--thk-surface); color:var(--thk-text); box-shadow:0 8px 32px #0c1c3633; font:13px/1.5 system-ui,sans-serif; }
+@media(max-width:620px) { .thk-update-overlay { padding:8px; } .thk-update-box { max-height:calc(100dvh - 16px); } .thk-update-banner { right:8px; bottom:8px; max-width:calc(100vw - 16px); } }
+
+/* Follow the current Chatwork surfaces, typography and primary action color. */
+:is(#thk-modal-backdrop,#thk-preview-modal-backdrop,#thk-toolkit-panel),.thk-update-overlay { backdrop-filter:none!important; background:rgba(0,0,0,.38)!important; }
+:is(#thk-modal-backdrop,#thk-preview-modal-backdrop,#thk-toolkit-panel) :is(.thk-modal-box,.thk-preview-modal-box),.thk-update-box { border-radius:8px!important; box-shadow:0 8px 32px #0003!important; font-family:var(--thk-font)!important; }
+:is(#thk-modal-backdrop,#thk-preview-modal-backdrop,#thk-toolkit-panel) :is(.thk-modal-header,.thk-preview-header),.thk-update-header { background:var(--thk-surface)!important; }
+.thk-update-box,.thk-update-notes,.thk-update-header h2 { font-family:var(--thk-font)!important; }
+#thk-toolkit-panel [hidden] { display:none!important; }
+#thk-toolkit-panel .thk-shortcut-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:10px 0 12px; }
+#thk-toolkit-panel .thk-shortcut-option { display:flex!important; align-items:center; gap:9px; padding:9px 10px; border:1px solid var(--thk-border); border-radius:5px; cursor:pointer; background:var(--thk-surface); }
+#thk-toolkit-panel .thk-shortcut-option:has(input:checked) { border-color:var(--thk-accent); background:var(--thk-tint); }
+#thk-toolkit-panel .thk-shortcut-option input { width:16px; height:16px; margin:0; accent-color:var(--thk-accent); }
+#thk-toolkit-panel.thk-files-panel .thk-modal-box { width:min(820px,100%)!important; }
+.thk-file-controls { display:flex; align-items:center; gap:8px; }
+#thk-toolkit-panel .thk-file-controls input { flex:1; margin:0!important; }
+.thk-file-filters { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 10px; }
+.thk-file-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--thk-border); }
+.thk-file-icon { display:inline-flex; align-items:center; justify-content:center; flex:0 0 42px; width:42px; height:42px; overflow:hidden; border:1px solid var(--thk-border); border-radius:5px; background:var(--thk-panel); color:var(--thk-muted); font:600 10px/1 system-ui; }
+.thk-file-thumbnail { width:100%; height:100%; object-fit:cover; }
+.thk-file-details { display:flex; flex:1; flex-direction:column; gap:3px; min-width:0; }
+.thk-file-name { font-size:13px; font-weight:600; overflow-wrap:anywhere; }
+.thk-file-meta { color:var(--thk-muted); font-size:11px; overflow-wrap:anywhere; }
+.thk-file-download { flex:0 0 auto; }
+.thk-file-empty { padding:30px 10px; text-align:center; color:var(--thk-muted); }
+@media(max-width:520px) { .thk-file-row { flex-wrap:wrap; gap:8px; } .thk-file-download { margin-left:50px; } #thk-toolkit-panel .thk-shortcut-grid { grid-template-columns:minmax(0,1fr); } }

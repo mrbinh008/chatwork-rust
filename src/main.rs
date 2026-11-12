@@ -42,6 +42,11 @@ enum UserEvent {
     ShowWindow,
     HideWindow,
     SaveConfig,
+    CheckUpdates(bool),
+    DownloadUpdate,
+    InstallUpdate,
+    UpdateUiReady,
+    Updater(updater::Event),
 }
 
 fn main() {
@@ -197,6 +202,17 @@ fn main() {
     // ── Event loop ───────────────────────────────────────────────────────────
     let state_clone = state.clone();
     let proxy_clone = proxy.clone();
+    let mut update_controller = updater::Controller::new();
+    {
+        let update_proxy = proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(15));
+            loop {
+                if update_proxy.send_event(UserEvent::CheckUpdates(false)).is_err() { break; }
+                std::thread::sleep(std::time::Duration::from_secs(6 * 60 * 60));
+            }
+        });
+    }
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -228,7 +244,7 @@ fn main() {
             Event::MainEventsCleared => {
                 // Check muda menu events
                 while let Ok(menu_event) = muda::MenuEvent::receiver().try_recv() {
-                    handle_menu_event(&menu_event.id.0, &window, &webview, &state_clone, control_flow);
+                    handle_menu_event(&menu_event.id.0, &window, &webview, &state_clone, &proxy_clone, control_flow);
                 }
 
                 // Check tray icon events
@@ -249,7 +265,7 @@ fn main() {
 
             // ── Custom user events ─────────────────────────────────────────
             Event::UserEvent(evt) => {
-                handle_user_event(evt, &window, &webview, &state_clone, &proxy_clone, &mut taskbar_mgr, tray.as_ref(), control_flow);
+                handle_user_event(evt, &window, &webview, &state_clone, &proxy_clone, &mut taskbar_mgr, tray.as_ref(), &mut update_controller, control_flow);
             }
 
             // ── Loop start ─────────────────────────────────────────────────
@@ -268,7 +284,7 @@ fn main() {
 fn build_init_script(zoom: f64) -> String {
     let css = serde_json::to_string(include_str!("ui.css")).expect("UI CSS is serializable");
     let brand_icon = serde_json::to_string(include_str!("../assets/branding/icon.svg")).expect("Brand icon is serializable");
-    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}", css, brand_icon, include_str!("injected.js"), include_str!("toolkit.js"), include_str!("downloads.js"));
+    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}", css, brand_icon, include_str!("injected.js"), include_str!("toolkit.js"), include_str!("downloads.js"), include_str!("files.js"), include_str!("update-ui.js"));
     script
         .replace("__ZOOM__", &zoom.to_string())
         .replace("__VERSION__", APP_VERSION)
@@ -294,6 +310,10 @@ fn handle_ipc_message(msg: &str, proxy: &tao::event_loop::EventLoopProxy<UserEve
                 app::IpcMessage::WriteLogError(msg) => {
                     error!("Renderer error: {}", msg);
                 }
+                app::IpcMessage::CheckForUpdates => { let _ = proxy.send_event(UserEvent::CheckUpdates(true)); }
+                app::IpcMessage::DownloadUpdate => { let _ = proxy.send_event(UserEvent::DownloadUpdate); }
+                app::IpcMessage::InstallUpdate => { let _ = proxy.send_event(UserEvent::InstallUpdate); }
+                app::IpcMessage::UpdateUiReady => { let _ = proxy.send_event(UserEvent::UpdateUiReady); }
                 _ => {}
             }
         }
@@ -308,6 +328,7 @@ fn handle_menu_event(
     window: &Window,
     webview: &WebView,
     state: &Arc<Mutex<app::AppState>>,
+    proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
     control_flow: &mut ControlFlow,
 ) {
     use menu::ids::*;
@@ -384,7 +405,7 @@ fn handle_menu_event(
             show_about_dialog();
         }
         HELP_CHECK_UPDATES => {
-            info!("Update check triggered");
+            let _ = proxy.send_event(UserEvent::CheckUpdates(true));
         }
         HELP_SUPPORT => {
             let _ = open::that("https://support-en.chatwork.com/hc/en-us");
@@ -401,9 +422,33 @@ fn handle_user_event(
     proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
     taskbar_mgr: &mut taskbar::TaskbarManager,
     tray: Option<&tray_icon::TrayIcon>,
+    updater: &mut updater::Controller,
     control_flow: &mut ControlFlow,
 ) {
     match event {
+        UserEvent::CheckUpdates(interactive) => {
+            updater.check(interactive, proxy.clone());
+            publish_update_status(updater, webview);
+        }
+        UserEvent::DownloadUpdate => {
+            updater.download(proxy.clone());
+            publish_update_status(updater, webview);
+        }
+        UserEvent::Updater(event) => {
+            updater.handle(event);
+            publish_update_status(updater, webview);
+        }
+        UserEvent::UpdateUiReady => {
+            updater.previous_result();
+            publish_update_status(updater, webview);
+        }
+        UserEvent::InstallUpdate => {
+            match updater.install() {
+                Ok(()) => { save_config_now(state); *control_flow = ControlFlow::Exit; }
+                Err(error) => updater.fail(error),
+            }
+            publish_update_status(updater, webview);
+        }
         UserEvent::ShowNotification { title, body, id, target } => {
             let unread = state.lock().unwrap().unread_count;
             notification::show_notification(&title, &body, Some(proxy.clone()), unread, id, target);
@@ -491,6 +536,13 @@ fn handle_user_event(
             *control_flow = ControlFlow::Exit;
         }
     }
+}
+
+fn publish_update_status(updater: &mut updater::Controller, webview: &WebView) {
+    if let Ok(status) = serde_json::to_string(&updater.status) {
+        let _ = webview.evaluate_script(&format!("window.__thk_updateState?.({status});"));
+    }
+    updater.status.open = false;
 }
 
 fn is_allowed_url(url: &str) -> bool {

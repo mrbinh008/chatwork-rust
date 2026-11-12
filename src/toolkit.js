@@ -5,17 +5,25 @@
         en: { emoji:'Recent emoji', settings:'THK-Chat settings', pr:'Create Pull Request', close:'Close', insert:'Insert into chat', copy:'Copy', copied:'Copied', project:'Project', title:'Title', url:'Pull Request URL', description:'Description', language:'Language', recentCount:'Recent emoji count', recent:'Recent', common:'Emoji', missing:'Complete all fields and enter a valid http/https link.', leave:'Create leave request' },
         ja: { emoji:'最近の絵文字', settings:'THK-Chat設定', pr:'プルリクエスト作成', close:'閉じる', insert:'チャットに挿入', copy:'コピー', copied:'コピーしました', project:'プロジェクト', title:'タイトル', url:'プルリクエストURL', description:'変更内容', language:'言語', recentCount:'最近の絵文字の表示数', recent:'最近使用', common:'絵文字', missing:'すべての項目を入力し、有効なhttp/httpsリンクを指定してください。', leave:'休暇申請を作成' }
     };
+    Object.assign(translations.vi, { files:'Quản lý file', shortcuts:'Shortcut hiển thị trong nhóm', shortcutHint:'Ẩn/hiện nút trên thanh soạn tin. Phím tắt vẫn hoạt động.', scope:'Áp dụng cho', allRooms:'Tất cả nhóm', thisRoom:'Nhóm hiện tại', inherit:'Dùng thiết lập chung', updates:'Kiểm tra cập nhật app', info:'Info', infoTitle:'Info có tiêu đề', code:'Code', hr:'Đường kẻ', preview:'Xem trước' });
+    Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons. Keyboard shortcuts remain available.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview' });
+    Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'表示するボタンを選択します。キーボードショートカットは引き続き使えます。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー' });
     function readSetting(key, fallback) { try { const value = localStorage.getItem('thk-toolkit.' + key); return value === null ? fallback : JSON.parse(value); } catch(e) { return fallback; } }
     function writeSetting(key, value) { try { localStorage.setItem('thk-toolkit.' + key, JSON.stringify(value)); } catch(e) {} }
     const settings = {
-        language: readSetting('language', 'auto'),
-        recentCount: Math.min(50, Math.max(1, Number(readSetting('recentCount', 12)) || 12))
+        language: readSetting('language', 'auto')
     };
     function getLanguage() {
         const language = settings.language === 'auto' ? window.CW?.application?.languageCode?.value || document.documentElement.lang || navigator.language : settings.language;
         return String(language).startsWith('ja') ? 'ja' : String(language).startsWith('vi') ? 'vi' : 'en';
     }
     const t = key => translations[getLanguage()][key] || key;
+    const shortcuts = [ ['info','thkBtnInfo'], ['infoTitle','thkBtnInfoTitle'], ['code','thkBtnCode'], ['hr','thkBtnHr'], ['leave','thkBtnLeaveRequest'], ['preview','thkBtnMarkdownPreview'], ['pr','thkToolkit-pr'], ['files','thkToolkit-files'] ];
+    function toolbarPreferences(roomId = getRoom().id) {
+        const global = readSetting('toolbar', {});
+        const local = roomId ? readSetting('toolbar.room.' + roomId, {}) : {};
+        return { ...(global && typeof global === 'object' ? global : {}), ...(local && typeof local === 'object' ? local : {}) };
+    }
     function element(tag, className, text) { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; }
     function button(text, action, className = 'thk-chip-btn') { const node = element('button', className, text); node.type = 'button'; node.addEventListener('click', action); return node; }
     function field(parent, label, type = 'text', value = '') {
@@ -138,63 +146,34 @@
         [['auto','Auto'],['vi','Tiếng Việt'],['en','English'],['ja','日本語']].forEach(([value,label]) => { const option = element('option', '', label); option.value = value; select.appendChild(option); });
         select.value = settings.language; languageLabel.appendChild(select); view.body.appendChild(languageLabel);
         select.addEventListener('change', () => { settings.language = select.value; writeSetting('language', select.value); syncToolbar(); openSettings(); });
-        const count = field(view.body, t('recentCount'), 'number', settings.recentCount); count.min = '1'; count.max = '50'; count.step = '1';
-        count.addEventListener('change', () => { settings.recentCount = Math.min(50, Math.max(1, Math.round(Number(count.value) || 12))); count.value = settings.recentCount; writeSetting('recentCount', settings.recentCount); });
-
-    }
-    const commonEmoji = ['😀','😊','😂','👍','🙏','❤️','🎉','✅','👀','💪','🙇','😅',':)',':D','(bow)','(roger)','(thanks)'];
-    let recentEmoji = readSetting('recentEmoji', []);
-    if (!Array.isArray(recentEmoji)) recentEmoji = [];
-    recentEmoji = recentEmoji.filter(value => typeof value === 'string' && value.length < 40).slice(0, 50);
-    function rememberEmoji(values) {
-        if (!values.length) return;
-        values.forEach(value => { recentEmoji = [value, ...recentEmoji.filter(item => item !== value)].slice(0, 50); });
-        writeSetting('recentEmoji', recentEmoji);
-    }
-    function addedText(before, after) {
-        let start = 0, oldEnd = before.length, newEnd = after.length;
-        while (start < oldEnd && start < newEnd && before[start] === after[start]) start++;
-        // Do not split a UTF-16 surrogate pair.
-        if (start && /[\uD800-\uDBFF]/.test(after[start - 1])) start--;
-        while (oldEnd > start && newEnd > start && before[oldEnd - 1] === after[newEnd - 1]) { oldEnd--; newEnd--; }
-        if (newEnd === start) return '';
-        if (Intl.Segmenter) {
-            for (const item of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(after)) {
-                const end = item.index + item.segment.length;
-                if (item.index < start && end > start) start = item.index;
-                if (item.index < newEnd && end > newEnd) newEnd = end;
-            }
+        view.body.appendChild(element('h3', 'thk-sec-title', t('shortcuts')));
+        view.body.appendChild(element('p', 'thk-leave-hint', t('shortcutHint')));
+        const scopeLabel = element('label', 'thk-toolkit-label', t('scope'));
+        const scope = element('select', 'thk-input-field');
+        const roomId = getRoom().id;
+        [['all',t('allRooms')], ...(roomId ? [['room',t('thisRoom')]] : [])].forEach(([value,label]) => { const option = element('option','',label); option.value = value; scope.appendChild(option); });
+        scopeLabel.appendChild(scope); view.body.appendChild(scopeLabel);
+        const grid = element('div','thk-shortcut-grid'); view.body.appendChild(grid);
+        const reset = button(t('inherit'), () => { writeSetting('toolbar.room.' + roomId, {}); drawShortcuts(); syncToolbar(); }, 'thk-btn-secondary'); view.body.appendChild(reset);
+        function drawShortcuts() {
+            grid.replaceChildren(); reset.hidden = scope.value !== 'room';
+            const key = scope.value === 'room' ? 'toolbar.room.' + roomId : 'toolbar';
+            const values = scope.value === 'room' ? toolbarPreferences(roomId) : readSetting('toolbar', {});
+            shortcuts.forEach(([name]) => {
+                const label = element('label','thk-shortcut-option'); const check = element('input'); check.type = 'checkbox'; check.checked = values?.[name] !== false;
+                label.append(check, element('span','',t(name))); grid.appendChild(label);
+                check.addEventListener('change', () => {
+                    const saved = readSetting(key, {}); writeSetting(key, { ...(saved && typeof saved === 'object' ? saved : {}), [name]:check.checked }); syncToolbar();
+                });
+            });
         }
-        return after.slice(start, newEnd);
+        scope.addEventListener('change', drawShortcuts); scope.value = 'all'; drawShortcuts();
+        view.body.appendChild(element('h3','thk-sec-title','THK-Chat v__VERSION__'));
+        view.body.appendChild(button(t('updates'), () => { view.close(); window.__thk_openUpdates?.(); }, 'thk-btn-secondary'));
     }
-    function findEmoji(text) {
-        const values = [];
-        if (Intl.Segmenter) {
-            for (const item of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)) {
-                if (/[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(item.segment)) values.push(item.segment);
-            }
-        }
-        commonEmoji.filter(value => value.length > 1 && /^[(:]/.test(value)).forEach(value => { if (text.includes(value)) values.push(value); });
-        return values;
-    }
-    let lastEditor = null, lastText = '';
-    document.addEventListener('focusin', e => { if (e.target === getEditor() && e.target !== lastEditor) { lastEditor = e.target; lastText = e.target.value; } });
     document.addEventListener('input', e => {
-        if (e.target !== getEditor() || e.isComposing) return;
-        rememberPullRequestProject(e.target.value);
-        rememberEmoji(findEmoji(addedText(lastEditor === e.target ? lastText : '', e.target.value)));
-        lastEditor = e.target; lastText = e.target.value;
+        if (e.target === getEditor() && !e.isComposing) rememberPullRequestProject(e.target.value);
     });
-    function openEmoji() {
-        const view = panel(t('emoji'));
-        function group(label, list) {
-            view.body.appendChild(element('h4', '', label));
-            const row = element('div', 'thk-chips-row');
-            list.forEach(value => row.appendChild(button(value, () => { view.close(); if (insert(value)) rememberEmoji([value]); }, 'thk-chip-btn thk-emoji-choice')));
-            view.body.appendChild(row);
-        }
-        group(t('recent'), recentEmoji.slice(0, settings.recentCount)); group(t('common'), commonEmoji);
-    }
     function formatPullRequest(project = '', url = '', spec = '', reviewTime = '') {
         return '[toall]\n[info]\nProject name: ' + project.trim() + '\nPull Request: ' + url.trim()
             + '\nSpec: ' + spec.trim() + '\nThời gian review dự kiến: ' + reviewTime.trim() + '\n[/info]\n';
@@ -291,19 +270,57 @@
         });
     }
     function syncToolbar() {
+        syncCoreTheme();
         localize();
         const toolbar = document.getElementById('thk-toolbar-inline');
         if (!toolbar) return;
+        toolbar.querySelector('#thkToolkit-emoji')?.remove();
         const roomName = getRoom().name;
         const leave = toolbar.querySelector('#thkBtnLeaveRequest');
         if (leave) { const hidden = !roomName.includes('Attendance infor_THKHN'); if (leave.hidden !== hidden) leave.hidden = hidden; if (leave.title !== t('leave')) leave.title = t('leave'); }
-        const actions = [ ['emoji','☺',openEmoji], ['pr','PR',insertPullRequest], ['settings','⚙',openSettings] ];
+        const actions = [ ['pr','PR',insertPullRequest], ['files','files',() => window.__thkFiles?.open()], ['settings','⚙',openSettings] ];
         actions.forEach(([key,icon,action]) => {
             let node = toolbar.querySelector('#thkToolkit-' + key);
-            if (!node) { node = button(icon, action, 'thk-icon-btn'); node.id = 'thkToolkit-' + key; node.addEventListener('mousedown', e => e.preventDefault()); toolbar.appendChild(node); }
+            if (!node) {
+                node = button(icon, action, 'thk-icon-btn'); node.id = 'thkToolkit-' + key;
+                if (key === 'files') node.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z"/></svg>';
+                node.addEventListener('mousedown', e => e.preventDefault()); toolbar.appendChild(node);
+            }
             if (node.title !== t(key)) { node.title = t(key); node.setAttribute('aria-label', t(key)); }
             if (key === 'pr') { const hidden = !roomName.includes('【HN】Source Code Review'); if (node.hidden !== hidden) node.hidden = hidden; }
         });
+        const preferences = toolbarPreferences();
+        shortcuts.forEach(([key,id]) => {
+            const node = toolbar.querySelector('#' + id); if (!node) return;
+            const eligible = key === 'leave' ? roomName.includes('Attendance infor_THKHN') : key === 'pr' ? roomName.includes('【HN】Source Code Review') : true;
+            const hidden = !eligible || preferences[key] === false;
+            if (node.hidden !== hidden) node.hidden = hidden;
+        });
+    }
+    function syncCoreTheme() {
+        if (typeof window.getComputedStyle !== 'function') return;
+        const chat = getEditor(); if (!chat) return;
+        const style = window.getComputedStyle(chat);
+        const root = document.documentElement.style;
+        const set = (key,value) => { if (value && root.getPropertyValue(key) !== value) root.setProperty(key,value); };
+        const painted = start => {
+            for (let node=start; node; node=node.parentElement) {
+                const color = window.getComputedStyle(node).backgroundColor;
+                if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') return color;
+            }
+            return '';
+        };
+        set('--thk-text', style.color); set('--thk-font', style.fontFamily); set('--thk-surface', painted(chat));
+        const nativeSend = document.querySelector('#_sendButton, #_chatSendButton, #CurrentSelectedRoom button[data-testid*="send"], #CurrentSelectedRoom button[aria-label="送信"]');
+        if (nativeSend && !nativeSend.disabled) {
+            const color = window.getComputedStyle(nativeSend).backgroundColor;
+            if (color && color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') set('--thk-accent', color);
+        }
+        const channels = (style.color || '').match(/[\d.]+/g);
+        const dark = channels && channels.slice(0,3).map(Number).reduce((a,b)=>a+b,0) > 500;
+        set('--thk-panel', dark ? '#24272a' : '#f5f6f7'); set('--thk-border', dark ? '#484c50' : '#dcdfe3');
+        set('--thk-muted', dark ? '#b2b8bd' : '#687179'); set('--thk-code', dark ? '#202326' : '#f3f4f5');
+        set('--thk-tint', dark ? '#203b33' : '#e8f5ef');
     }
     function start() {
         if (!document.getElementById('thk-toolkit-styles')) {
@@ -322,6 +339,6 @@
         window.addEventListener('hashchange', () => { closePanel?.(); syncToolbar(); });
         setInterval(syncToolbar, 1500);
     }
-    window.__thkToolkit = { getRoom, getRoomMembers: getModernMembers, translate: translateLabel, resolveAvatarUrl, close: () => closePanel?.(), openSettings, insertPullRequest };
+    window.__thkToolkit = { getRoom, getRoomMembers: getModernMembers, translate: translateLabel, resolveAvatarUrl, close: () => closePanel?.(), openSettings, insertPullRequest, panel, getLanguage, toolbarPreferences };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

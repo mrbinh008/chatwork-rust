@@ -29,9 +29,4 @@ $ErrorActionPreference = 'Stop'
 if ($RebuildBuilder -or -not $imageExists) { Invoke-Docker @('build', '-t', 'mac-builder', '-f', (Join-Path $ScriptDir 'Dockerfile.mac-builder'), $ScriptDir) }
 Invoke-Docker @('run', '--rm', '--mount', "type=bind,source=$ScriptDir,target=/workspace", '--workdir', '/workspace', 'mac-builder', 'bash', 'mac/build-universal.sh', '--universal')
 
-if (Test-Path "$ScriptDir\dist\THK.app") {
-    Compress-Archive -Path "$ScriptDir\dist\THK.app" -DestinationPath "$ScriptDir\dist\THK-macOS-Universal.zip" -Force
-    Write-Host "Created $ScriptDir\dist\THK-macOS-Universal.zip" -ForegroundColor Green
-}
-
 Write-Host 'macOS Universal build finished. See the versioned archive in dist.'

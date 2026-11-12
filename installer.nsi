@@ -6,7 +6,7 @@
 
 ; ── App info ──────────────────────────────────────────────────────────────────
 !ifndef APP_VERSION
-!define APP_VERSION "2.25.14"
+!define APP_VERSION "2.26.0"
 !endif
 
 Name "THK-Chat"

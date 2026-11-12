@@ -44,7 +44,10 @@ fi
 chmod 755 "$APP_BUNDLE/Contents/MacOS/chatwork"
 cp assets/AppIcon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 sed -E '/<key>CFBundle(ShortVersionString|Version)<\/key>/{n;s#<string>[^<]*</string>#<string>'"$VERSION"'</string>#;}' mac/Info.plist > "$APP_BUNDLE/Contents/Info.plist"
-if [[ "$(uname -s)" == Darwin ]]; then
+if command -v rcodesign >/dev/null 2>&1; then
+  printf 'Signing %s with rcodesign (ad-hoc)...\n' "$APP_NAME.app"
+  rcodesign sign "$APP_BUNDLE"
+elif [[ "$(uname -s)" == Darwin ]]; then
   plutil -lint "$APP_BUNDLE/Contents/Info.plist"
   codesign --force --deep --sign - "$APP_BUNDLE"
   codesign --verify --deep --strict "$APP_BUNDLE"
@@ -73,3 +76,11 @@ if [[ -f "$DIST_DIR/$APP_NAME-v$VERSION-macOS-$LABEL.zip" ]]; then
 fi
 
 printf 'Built THK-Chat %s (%s)\nApp: %s\nArchive: %s\n' "$VERSION" "$LABEL" "$APP_BUNDLE" "$ARCHIVE"
+(
+  cd "$DIST_DIR"
+  for artifact in "$APP_NAME-v$VERSION-macOS-$LABEL.tar.gz" "$APP_NAME-v$VERSION-macOS-$LABEL.zip" "$APP_NAME-v$VERSION-macOS-$LABEL.dmg"; do
+    if [[ -f "$artifact" ]]; then
+      if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$artifact"; else sha256sum "$artifact"; fi
+    fi
+  done
+) > "$DIST_DIR/$APP_NAME-v$VERSION-macOS-SHA256.txt"

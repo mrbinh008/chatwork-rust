@@ -13,7 +13,7 @@ pub const KDDI_URL: &str = "https://kcw.kddi.ne.jp";
 pub const APP_NAME: &str = "THK-Chat";
 
 /// App version
-pub const APP_VERSION: &str = "2.25.14";
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// User-Agent string mimicking the desktop app
 pub const USER_AGENT: &str = concat!(
@@ -61,6 +61,9 @@ pub enum IpcMessage {
     Reload,
     SetZoomFactor(f64),
     CheckForUpdates,
+    DownloadUpdate,
+    InstallUpdate,
+    UpdateUiReady,
     Logout,
     WriteLogError(String),
 }

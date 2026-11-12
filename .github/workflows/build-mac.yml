@@ -3,7 +3,6 @@ name: Build macOS Universal App
 on:
   push:
     branches: [ "main", "master" ]
-    tags: [ "v*" ]
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -62,13 +61,3 @@ jobs:
             dist/THK-Chat-v*-macOS-*.tar.gz
           if-no-files-found: error
 
-      - name: Create GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.dmg
-            dist/THK-Chat-v*-macOS-*.zip
-            dist/THK-Chat-v*-macOS-*.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

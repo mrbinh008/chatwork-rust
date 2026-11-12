@@ -18,7 +18,7 @@ const window = { location: { hash: '#!rid7' }, CW: { application: {
 } } };
 const document = { readyState:'loading', documentElement:{lang:'vi'}, addEventListener() {}, querySelector() { return null; } };
 const context = vm.createContext({ window, document, navigator:{language:'en'}, localStorage:{getItem:key=>stored.get(key)??null,setItem:(key,value)=>stored.set(key,value)}, Intl, URL, Map, Set, WeakMap, console });
-const instrumented = source.replace('    window.__thkToolkit =', '    globalThis.testApi = { addedText, findEmoji, rememberEmoji, formatPullRequest, rememberPullRequestProject, getLanguage, translateLabel, resolveAvatarUrl, settings, recent: () => recentEmoji };\n    window.__thkToolkit =');
+const instrumented = source.replace('    window.__thkToolkit =', '    globalThis.testApi = { formatPullRequest, rememberPullRequestProject, getLanguage, translateLabel, resolveAvatarUrl, settings };\n    window.__thkToolkit =');
 vm.runInContext(instrumented, context);
 const api = context.testApi;
 assert.equal(api.resolveAvatarUrl('/avatar/user.rsz.png'), 'https://appdata.chatwork.com/avatar/user.rsz.png');
@@ -32,20 +32,12 @@ assert.equal(api.getLanguage(), 'vi'); api.settings.language='ja';
 assert.equal(api.translateLabel('Nghỉ phép năm'), '有給休暇'); api.settings.language='en';
 assert.equal(api.translateLabel('Nghỉ phép năm'), 'Paid leave'); api.settings.language='vi';
 assert.equal(api.translateLabel('Nghỉ phép năm'), 'Nghỉ phép năm');
-assert.equal(api.addedText('Hello', 'Hello 👍'), ' 👍');
-assert.equal(api.findEmoji(api.addedText('Hello', 'Hello 👍'))[0], '👍');
-assert.equal(api.findEmoji(api.addedText('👍', '👍🏻'))[0], '👍🏻', 'Keep skin tone with emoji');
-assert.equal(api.findEmoji('👨‍👩‍👧‍👦')[0], '👨‍👩‍👧‍👦', 'Keep family emoji together');
-assert.equal(api.findEmoji('🇯🇵')[0], '🇯🇵');
-assert.equal(api.findEmoji('(bow)')[0], '(bow)');
-assert.equal(api.addedText('Hello 👍', 'Hello '), '', 'Deletion is not recent usage');
-api.rememberEmoji(['👍','😊','👍']); assert.equal(api.recent().join(','), '👍,😊', 'Most recent first, no duplicates');
-assert.ok(stored.get('thk-toolkit.recentEmoji'));
+assert.ok(!source.includes('function rememberEmoji'), 'Recent emoji tracking removed');
 assert.equal(api.formatPullRequest(' Project ', ' https://example.com/pull/1 ', ' Spec ', ' 30 phút '), '[toall]\n[info]\nProject name: Project\nPull Request: https://example.com/pull/1\nSpec: Spec\nThời gian review dự kiến: 30 phút\n[/info]\n');
 assert.equal(api.formatPullRequest(), '[toall]\n[info]\nProject name: \nPull Request: \nSpec: \nThời gian review dự kiến: \n[/info]\n');
 api.rememberPullRequestProject(api.formatPullRequest('New Project'));
 assert.equal(JSON.parse(stored.get('thk-toolkit.prProject')),'New Project');
-console.log('Toolkit language, membership, emoji and PR regression checks passed.');
+console.log('Toolkit language, membership and PR regression checks passed.');
 
 // Exercise dialogs and toolbar actions with a small DOM adapter, without a live Chatwork session.
 class UIEvent {
@@ -66,6 +58,7 @@ class UINode {
     get textContent() { return this.tagName==='#TEXT'?this.nodeValue:this.children.map(node=>node.textContent).join(''); }
     get parentElement() { return this.parentNode; }
     get isConnected() { return this===uiDocument?.documentElement||!!this.parentNode?.isConnected; }
+    replaceChildren(...nodes) { for(const node of this.children)node.parentNode=null;this.children=[];this.append(...nodes); }
     appendChild(node) { node.remove(); this.children.push(node); node.parentNode=this; return node; }
     append(...nodes) { nodes.forEach(node=>this.appendChild(node)); }
     prepend(node) { node.remove(); this.children.unshift(node);node.parentNode=this; }
@@ -110,8 +103,15 @@ let dialog=uiDocument.getElementById('thk-toolkit-panel');
 let language=dialog.querySelector('select');language.value='vi';language.dispatchEvent(new UIEvent('change'));
 assert.equal(leave.hidden,true);assert.equal(uiDocument.getElementById('thkToolkit-pr').hidden,false);
 dialog=uiDocument.getElementById('thk-toolkit-panel');
-const count=dialog.querySelector('input');count.value='99';count.dispatchEvent(new UIEvent('change'));
-assert.equal(JSON.parse(uiStore.get('thk-toolkit.recentCount')),50);
+const firstShortcut=dialog.querySelector('input');firstShortcut.checked=false;firstShortcut.dispatchEvent(new UIEvent('change'));
+assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar')).info,false);
+assert.equal(dialog.querySelectorAll('input').length,8,'Only current shortcuts; recent emoji removed');
+assert.equal(uiDocument.getElementById('thkToolkit-emoji'),null);
+const scope=dialog.querySelectorAll('select')[1];scope.value='room';scope.dispatchEvent(new UIEvent('change'));
+const localShortcut=dialog.querySelector('input');localShortcut.checked=true;localShortcut.dispatchEvent(new UIEvent('change'));
+assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar.room.7')).info,true);
+assert.equal(uiWindow.__thkToolkit.toolbarPreferences('7').info,true);
+assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,false);
 uiDocument.getElementById('thkToolkit-pr').click();
 assert.equal(uiDocument.getElementById('thk-toolkit-panel'),null,'PR inserts directly without a popup');
 assert.ok(editor.value.includes('[toall]\n[info]\nProject name: \nPull Request: \nSpec: \nThời gian review dự kiến: \n[/info]\n'));
