@@ -86,6 +86,11 @@ impl Default for AppConfig {
 impl AppConfig {
     /// Returns the config file path: %APPDATA%\Chatwork\config.json
     pub fn config_path() -> PathBuf {
+        // Keep local smoke tests independent of a running user's instance/config.
+        if let Some(directory) = std::env::var_os("THK_CHAT_CONFIG_DIR")
+            .map(PathBuf::from).filter(|directory| directory.is_absolute()) {
+            return directory.join("config.json");
+        }
         let base = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."));
         base.join("Chatwork").join("config.json")

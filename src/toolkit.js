@@ -8,6 +8,9 @@
     Object.assign(translations.vi, { files:'Quản lý file', shortcuts:'Shortcut hiển thị trong nhóm', shortcutHint:'Ẩn/hiện nút trên thanh soạn tin và cấu hình phím tắt.', scope:'Áp dụng cho', allRooms:'Tất cả các nhóm', thisRoom:'Nhóm hiện tại', inherit:'Dùng thiết lập chung', updates:'Kiểm tra cập nhật app', info:'Info', infoTitle:'Info có tiêu đề', code:'Code', hr:'Đường kẻ', preview:'Xem trước', customKey:'Phím tắt', pressKey:'Bấm phím...', noKey:'Chưa gán', roomTree:'Cây thư mục phòng', addFolder:'+ Thư mục', autoGroup:'⚡ Tự động gom', folderName:'Tên thư mục', parentFolder:'Thư mục cha', rootFolder:'[Thư mục gốc]', selectRooms:'Chọn phòng đưa vào thư mục', save:'Lưu', delete:'Xóa', edit:'Sửa' });
     Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons and configure shortcuts.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview', customKey:'Shortcut key', pressKey:'Press key...', noKey:'None', roomTree:'Room folders', addFolder:'+ Folder', autoGroup:'⚡ Auto group', folderName:'Folder name', parentFolder:'Parent folder', rootFolder:'[Root folder]', selectRooms:'Select rooms', save:'Save', delete:'Delete', edit:'Edit' });
     Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'ツールバーボタンの表示とショートカットキーを設定します。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー', customKey:'ショートカット', pressKey:'キーを押してください...', noKey:'未設定', roomTree:'ルームフォルダ', addFolder:'+ フォルダ', autoGroup:'⚡ 自動グループ化', folderName:'フォルダ名', parentFolder:'親フォルダ', rootFolder:'[ルートフォルダ]', selectRooms:'ルームを選択', save:'保存', delete:'削除', edit:'編集' });
+    Object.assign(translations.vi, { addChildFolder:'+ Thư mục con', folderTreeHint:'Tạo thư mục cha, rồi bấm “+ Thư mục con” để nhóm các phòng theo từng nhánh.', folderParentMissing:'Thư mục cha không còn tồn tại. Hãy chọn lại thư mục cha.' });
+    Object.assign(translations.en, { addChildFolder:'+ Subfolder', folderTreeHint:'Create a parent folder, then choose “+ Subfolder” to organize rooms into branches.', folderParentMissing:'The parent folder no longer exists. Choose another parent.' });
+    Object.assign(translations.ja, { addChildFolder:'+ 子フォルダ', folderTreeHint:'親フォルダを作成し、「+ 子フォルダ」でルームを階層ごとに整理できます。', folderParentMissing:'親フォルダが見つかりません。別の親フォルダを選択してください。' });
     function readSetting(key, fallback) { try { const value = localStorage.getItem('thk-toolkit.' + key); return value === null ? fallback : JSON.parse(value); } catch(e) { return fallback; } }
     function writeSetting(key, value) { try { localStorage.setItem('thk-toolkit.' + key, JSON.stringify(value)); return true; } catch(e) { return false; } }
     const settings = {
@@ -224,10 +227,15 @@
             window.__thkFiles?.open();
         }
     }
+    const handledShortcutEvents = new WeakSet();
     window.__thk_matchCustomShortkey = function(e) {
+        // Both the global listener and the composer listener consult this matcher.
+        if (handledShortcutEvents.has(e)) return true;
+        if (e.isComposing || e.defaultPrevented) return false;
         const keys = getShortkeys();
         for (const [name, combo] of Object.entries(keys)) {
             if (matchCombo(e, combo)) {
+                handledShortcutEvents.add(e);
                 e.preventDefault();
                 triggerShortcutAction(name);
                 return true;
@@ -489,383 +497,101 @@
             });
         });
     }
+    function roomValue(input) {
+        for (let depth = 0; input && typeof input === 'object' && depth < 5; depth++) input = input.getValue?.() ?? input.value;
+        return typeof input === 'string' || typeof input === 'number' ? String(input).trim() : '';
+    }
+    function nativeRoomEntities() {
+        const repository = window.CW?.application?.domainServiceContext?.roomService?.roomRepository;
+        return repository?.getAll?.() || Object.values(repository?.entities || {});
+    }
     function getAllRooms() {
         const map = new Map();
-        const entities = window.CW?.application?.domainServiceContext?.roomService?.roomRepository?.entities;
-        if (entities && typeof entities === 'object') {
-            for (const [id, entity] of Object.entries(entities)) {
-                const name = entity?.name?.value || '';
-                const unread = Number(entity?.unreadNumber?.value ?? entity?.unread_num ?? 0) || 0;
-                map.set(String(id), { id: String(id), name, unread });
-            }
+        const excluded = new Set();
+        const app = window.CW?.application;
+        const repository = app?.domainServiceContext?.roomService?.roomRepository;
+        const users = app?.domainServiceContext?.userService?.userRepository;
+        const userMap = new Map((users?.getAll?.() || Object.values(users?.entities || {})).map(user => [roomValue(user.identity), user]));
+        for (const [id, user] of Object.entries(users?.entities || {})) if (!userMap.has(id)) userMap.set(id, user);
+        const entities = repository?.getAll ? nativeRoomEntities().map(entity => [roomValue(entity.identity), entity]) : Object.entries(repository?.entities || {});
+        for (const [key, entity] of entities) {
+            const rawType = roomValue(entity?.type).toLowerCase();
+            const id = roomValue(entity?.identity) || String(key);
+            if (['canceled', 'created', 'uncreateddirect'].includes(rawType)) { excluded.add(id); continue; }
+            if (!id) continue;
+            const userId = roomValue(entity?.getMate?.() ?? entity?.mate);
+            const user = userMap.get(userId);
+            const type = rawType === 'mychat' ? 'mychat' : userId || rawType === 'direct' ? 'direct' : 'group';
+            const name = roomValue(entity?.getName?.()) || roomValue(entity?.name)
+                || roomValue(user?.getName?.()) || roomValue(user?.name)
+                || roomValue(window.RM?.room_dat?.[id]?.name);
+            const unread = Number(entity?.unreadNumber?.value ?? entity?.messageCountInfo?.unreadMessageCount ?? entity?.unread_num ?? 0) || 0;
+            map.set(id, {id, name, unread, type, userId});
         }
         if (window.RM?.room_dat && typeof window.RM.room_dat === 'object') {
             for (const [id, room] of Object.entries(window.RM.room_dat)) {
+                if (excluded.has(String(id))) continue;
                 const prev = map.get(String(id));
-                map.set(String(id), { id: String(id), name: room.name || prev?.name || '', unread: Number(room.unread_num ?? prev?.unread ?? 0) || 0 });
+                const userId = String(room.aid || room.account_id || prev?.userId || '');
+                const user = userMap.get(userId);
+                map.set(String(id), {id:String(id),name:prev?.name || roomValue(room.name) || roomValue(user?.getName?.()) || roomValue(user?.name),unread:Number(room.unread_num ?? prev?.unread ?? 0)||0,type:prev?.type || (userId?'direct':'group'),userId});
             }
         }
-        if (map.size === 0 && typeof document.querySelectorAll === 'function') {
+        if (typeof document.querySelectorAll === 'function') {
             document.querySelectorAll('#_roomListArea [data-rid], #RoomList [data-rid], .roomListItem').forEach(el => {
                 const id = el.getAttribute('data-rid') || el.id?.match(/\d+/)?.[0];
-                const name = el.querySelector('.roomTitle, .name, [role=heading]')?.textContent?.trim() || '';
+                if (excluded.has(String(id))) return;
+                const name = el.getAttribute('aria-label') || el.querySelector('.roomTitle, .name, [role=heading]')?.textContent?.trim() || '';
                 const unread = Number(el.querySelector('.unread, .roomBadge, ._unreadBadge')?.textContent?.trim()) || 0;
-                if (id) map.set(String(id), { id: String(id), name, unread });
+                const prev = map.get(String(id));
+                if (id && !prev) map.set(String(id), {id:String(id),name,unread,type:'group',userId:''});
+                else if (prev && !prev.name && name) prev.name = name;
             });
         }
-        return [...map.values()];
+        return [...map.values()].map(room => ({...room,name:room.name || (room.type === 'direct' ? 'User ' + (room.userId || room.id) : room.type === 'mychat' ? 'My Chat' : 'Room ' + room.id)}));
     }
-
-    function getRoomTree() {
-        const raw = readSetting('roomTree', []);
-        return Array.isArray(raw) ? raw : [];
-    }
-    function saveRoomTree(tree) {
-        return writeSetting('roomTree', tree);
-    }
-
-    function computeFolderTotalUnread(folder, roomsMap) {
-        let count = 0;
-        (folder.rooms || []).forEach(rid => {
-            count += (roomsMap.get(String(rid))?.unread || 0);
-        });
-        (folder.children || []).forEach(child => {
-            count += computeFolderTotalUnread(child, roomsMap);
-        });
-        return count;
-    }
-
-    function autoGroupRooms() {
-        const rooms = getAllRooms();
-        if (!rooms.length) return false;
-        const rootFolders = [];
-        function getOrCreateFolder(list, name) {
-            let found = list.find(f => f.name.toLowerCase() === name.toLowerCase());
-            if (!found) {
-                found = {
-                    id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-                    name,
-                    collapsed: false,
-                    rooms: [],
-                    children: []
-                };
-                list.push(found);
-            }
-            return found;
+    function getRoomDirectory() {
+        const items = getAllRooms().map(room => ({...room,key:'room:' + room.id,available:true}));
+        const linked = new Set(items.map(room => room.userId).filter(Boolean));
+        const service = window.CW?.application?.domainServiceContext?.userService;
+        for (const user of service?.getContactList?.(false) || []) {
+            const userId = roomValue(user.identity);
+            if (!userId || linked.has(userId)) continue;
+            const name = roomValue(user.getName?.()) || roomValue(user.name) || 'User ' + userId;
+            items.push({key:'contact:' + userId,id:'',userId,name,type:'direct',unread:0,available:false});
+            linked.add(userId);
         }
-
-        rooms.forEach(room => {
-            const raw = room.name.trim();
-            let parts = [];
-            const bracketMatch = raw.match(/^([\[【][^\]】]+[\]】])\s*(.*)$/);
-            if (bracketMatch) {
-                const tag = bracketMatch[1].replace(/[\[\]【】]/g, '').trim();
-                const rest = bracketMatch[2].trim();
-                if (tag) parts.push(tag);
-                if (rest) parts.push(...rest.split(/\s*[\/\-]\s*/).filter(Boolean));
-            } else {
-                parts = raw.split(/\s*[\/\-]\s*/).filter(Boolean);
-            }
-
-            if (parts.length > 1) {
-                const folderParts = parts.slice(0, parts.length > 1 ? -1 : 1);
-                let currentList = rootFolders;
-                folderParts.forEach((folderName, idx) => {
-                    const f = getOrCreateFolder(currentList, folderName);
-                    if (idx === folderParts.length - 1) {
-                        if (!f.rooms.includes(room.id)) f.rooms.push(room.id);
-                    }
-                    currentList = f.children;
-                });
-            }
-        });
-
-        if (rootFolders.length) {
-            saveRoomTree(rootFolders);
-            mountRoomTree(true);
-            return true;
-        }
-        return false;
+        return items;
     }
-
-    function openFolderModal(folderToEdit = null, parentId = null) {
-        const isEdit = Boolean(folderToEdit);
-        const view = panel(isEdit ? t('edit') + ' ' + folderToEdit.name : t('addFolder'));
-        const allRooms = getAllRooms();
-        const tree = getRoomTree();
-
-        const nameInput = field(view.body, t('folderName'), 'text', folderToEdit?.name || '');
-
-        const parentLabel = element('label', 'thk-toolkit-label', t('parentFolder'));
-        const parentSelect = element('select', 'thk-input-field');
-        const rootOpt = element('option', '', t('rootFolder'));
-        rootOpt.value = '';
-        parentSelect.appendChild(rootOpt);
-
-        let currentParentId = '';
-        function flattenFolders(list, prefix = '', containingFolderId = '') {
-            list.forEach(f => {
-                if (folderToEdit && f.id === folderToEdit.id) {
-                    currentParentId = containingFolderId;
-                    return;
+    let directoryLoad = null, directoryLoadedAt = 0, directoryAccount = '';
+    function loadRoomDirectory(force = false) {
+        const app = window.CW?.application, account = roomValue(app?.myId);
+        if (directoryLoad && directoryAccount === account) return directoryLoad;
+        if (!force && directoryAccount === account && Date.now() - directoryLoadedAt < 60000) return Promise.resolve({items:getRoomDirectory(),error:''});
+        if (directoryAccount !== account) directoryLoadedAt = 0;
+        directoryAccount = account;
+        const service = app?.domainServiceContext?.userService;
+        const work = (async () => {
+            let error = '';
+            try {
+                await service?.refreshContactList?.();
+                const contacts = service?.getContactList?.(false) || [];
+                const ids = contacts.map(user => user.identity).filter(Boolean);
+                if (service?.refreshUsers) {
+                    for (let index = 0; index < ids.length; index += 50) await service.refreshUsers(ids.slice(index, index + 50), () => {});
                 }
-                const opt = element('option', '', prefix + '📁 ' + f.name);
-                opt.value = f.id;
-                parentSelect.appendChild(opt);
-                if (f.children?.length) flattenFolders(f.children, prefix + '— ', f.id);
-            });
-        }
-        flattenFolders(tree);
-        parentSelect.value = parentId || currentParentId;
-        parentLabel.appendChild(parentSelect);
-        view.body.appendChild(parentLabel);
-
-        view.body.appendChild(element('label', 'thk-toolkit-label', t('selectRooms')));
-        const searchInput = element('input', 'thk-input-field');
-        searchInput.placeholder = 'Tìm tên phòng...';
-        view.body.appendChild(searchInput);
-
-        const roomBox = element('div', 'thk-shortcut-grid');
-        roomBox.style.maxHeight = '200px';
-        roomBox.style.overflowY = 'auto';
-        roomBox.style.margin = '8px 0';
-        view.body.appendChild(roomBox);
-
-        const selectedRooms = new Set(folderToEdit?.rooms || []);
-        function renderRoomChoices(query = '') {
-            roomBox.replaceChildren();
-            const q = query.toLowerCase();
-            allRooms.filter(r => !q || r.name.toLowerCase().includes(q)).forEach(r => {
-                const label = element('label', 'thk-shortcut-option');
-                const chk = element('input');
-                chk.type = 'checkbox';
-                chk.checked = selectedRooms.has(r.id);
-                chk.addEventListener('change', () => {
-                    if (chk.checked) selectedRooms.add(r.id); else selectedRooms.delete(r.id);
-                });
-                label.append(chk, element('span', '', r.name || r.id));
-                roomBox.appendChild(label);
-            });
-        }
-        renderRoomChoices();
-        searchInput.addEventListener('input', () => renderRoomChoices(searchInput.value));
-
-        const saveBtn = button(t('save'), () => {
-            const name = nameInput.value.trim();
-            if (!name) return;
-            const targetTree = getRoomTree();
-
-            function removeNode(list, id) {
-                const idx = list.findIndex(node => node.id === id);
-                if (idx >= 0) return list.splice(idx, 1)[0];
-                for (const node of list) {
-                    if (node.children) {
-                        const res = removeNode(node.children, id);
-                        if (res) return res;
-                    }
-                }
-                return null;
-            }
-
-            function insertNode(list, targetParentId, nodeToInsert) {
-                if (!targetParentId) {
-                    list.push(nodeToInsert);
-                    return true;
-                }
-                for (const item of list) {
-                    if (item.id === targetParentId) {
-                        item.children = item.children || [];
-                        item.children.push(nodeToInsert);
-                        item.collapsed = false;
-                        return true;
-                    }
-                    if (item.children && insertNode(item.children, targetParentId, nodeToInsert)) {
-                        item.collapsed = false;
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            const targetParent = parentSelect.value || null;
-            if (isEdit) {
-                const existing = removeNode(targetTree, folderToEdit.id) || folderToEdit;
-                existing.name = name;
-                existing.rooms = [...selectedRooms];
-                if (!insertNode(targetTree, targetParent, existing)) targetTree.push(existing);
-            } else {
-                const newNode = {
-                    id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-                    name,
-                    collapsed: false,
-                    rooms: [...selectedRooms],
-                    children: []
-                };
-                if (!insertNode(targetTree, targetParent, newNode)) targetTree.push(newNode);
-            }
-
-            saveRoomTree(targetTree);
-            mountRoomTree(true);
-            view.close();
-        }, 'thk-btn-primary');
-
-        view.footer.prepend(saveBtn);
-
-        if (isEdit) {
-            const delBtn = button(t('delete'), () => {
-                const targetTree = getRoomTree();
-                function removeRec(list, id) {
-                    const idx = list.findIndex(node => node.id === id);
-                    if (idx >= 0) { list.splice(idx, 1); return true; }
-                    for (const node of list) {
-                        if (node.children && removeRec(node.children, id)) return true;
-                    }
-                    return false;
-                }
-                removeRec(targetTree, folderToEdit.id);
-                saveRoomTree(targetTree);
-                mountRoomTree(true);
-                view.close();
-            }, 'thk-btn-secondary');
-            delBtn.style.color = '#e05252';
-            view.footer.prepend(delBtn);
-        }
+                if (window.CW?.application === app && roomValue(app?.myId) === account) directoryLoadedAt = Date.now();
+            } catch (failure) { error = failure?.message || String(failure); }
+            return {items:getRoomDirectory(),error};
+        })();
+        directoryLoad = work;
+        const clear = () => { if (directoryLoad === work) directoryLoad = null; };
+        work.then(clear, clear);
+        return work;
     }
 
-    function mountRoomTree(forceRerender = false) {
-        if (typeof document.querySelector !== 'function') return;
-        const sidebar = document.querySelector('#_roomListArea, #RoomList, .roomList, #_sideContent');
-        if (!sidebar) return;
-
-        let panelNode = document.getElementById('thk-room-tree-panel');
-        if (!panelNode) {
-            panelNode = element('div', '');
-            panelNode.id = 'thk-room-tree-panel';
-            if (sidebar.parentElement) sidebar.parentElement.insertBefore(panelNode, sidebar);
-            else if (typeof sidebar.prepend === 'function') sidebar.prepend(panelNode);
-            else sidebar.appendChild(panelNode);
-            forceRerender = true;
-        }
-
-        if (!forceRerender && panelNode.dataset?.rendered) {
-            const currentRoomId = getRoom().id;
-            panelNode.querySelectorAll('.thk-tree-row[data-rid]').forEach(row => {
-                const rid = row.getAttribute('data-rid');
-                if (rid === currentRoomId) row.classList.add('active'); else row.classList.remove('active');
-            });
-            return;
-        }
-
-        if (panelNode.dataset) panelNode.dataset.rendered = 'true';
-        panelNode.replaceChildren();
-
-        const tree = getRoomTree();
-        const allRooms = getAllRooms();
-        const roomsMap = new Map(allRooms.map(r => [r.id, r]));
-        const currentRoomId = getRoom().id;
-
-        const header = element('div', 'thk-tree-header');
-        const title = element('span', 'thk-tree-title', '📁 ' + t('roomTree'));
-        const actions = element('div', 'thk-tree-actions');
-
-        const addBtn = button(t('addFolder'), () => openFolderModal(), 'thk-tree-btn');
-        const autoBtn = button(t('autoGroup'), () => {
-            if (autoGroupRooms()) {
-                mountRoomTree(true);
-            }
-        }, 'thk-tree-btn');
-
-        actions.append(addBtn, autoBtn);
-        header.append(title, actions);
-        panelNode.appendChild(header);
-
-        if (!tree.length) {
-            const emptyHint = element('div', 'thk-leave-hint', 'Chưa có thư mục. Bấm "+ Thư mục" hoặc "⚡ Tự động gom" để tạo cây thư mục.');
-            emptyHint.style.padding = '6px 0';
-            panelNode.appendChild(emptyHint);
-            return;
-        }
-
-        function renderFolder(folder, container) {
-            const node = element('div', 'thk-tree-node');
-            const row = element('div', 'thk-tree-row');
-            const totalUnread = computeFolderTotalUnread(folder, roomsMap);
-
-            const label = element('div', 'thk-tree-label');
-            const icon = element('span', '', folder.collapsed ? '📁 ' : '📂 ');
-            const nameSpan = element('span', '', folder.name);
-            label.append(icon, nameSpan);
-            row.appendChild(label);
-
-            if (totalUnread > 0) {
-                const badge = element('span', 'thk-tree-badge', String(totalUnread));
-                row.appendChild(badge);
-            }
-
-            const tools = element('div', 'thk-tree-tools');
-            const addChildBtn = button('+', (e) => { e.stopPropagation(); openFolderModal(null, folder.id); }, 'thk-tree-tool-btn');
-            addChildBtn.title = 'Thêm thư mục con';
-            const editBtn = button('✎', (e) => { e.stopPropagation(); openFolderModal(folder); }, 'thk-tree-tool-btn');
-            editBtn.title = t('edit');
-            const delBtn = button('✕', (e) => {
-                e.stopPropagation();
-                const cur = getRoomTree();
-                function removeById(list, id) {
-                    const idx = list.findIndex(item => item.id === id);
-                    if (idx >= 0) { list.splice(idx, 1); return true; }
-                    for (const item of list) {
-                        if (item.children && removeById(item.children, id)) return true;
-                    }
-                    return false;
-                }
-                removeById(cur, folder.id);
-                saveRoomTree(cur);
-                mountRoomTree(true);
-            }, 'thk-tree-tool-btn');
-            delBtn.title = t('delete');
-
-            tools.append(addChildBtn, editBtn, delBtn);
-            row.appendChild(tools);
-
-            row.addEventListener('click', () => {
-                folder.collapsed = !folder.collapsed;
-                saveRoomTree(tree);
-                mountRoomTree(true);
-            });
-            node.appendChild(row);
-
-            if (!folder.collapsed) {
-                const sublist = element('ul', 'thk-tree-sublist');
-                (folder.children || []).forEach(child => renderFolder(child, sublist));
-                (folder.rooms || []).forEach(rid => {
-                    const roomInfo = roomsMap.get(String(rid)) || { id: rid, name: 'Room ' + rid, unread: 0 };
-                    const roomRow = element('li', 'thk-tree-row' + (String(rid) === currentRoomId ? ' active' : ''));
-                    roomRow.setAttribute('data-rid', String(rid));
-                    const roomLabel = element('div', 'thk-tree-label');
-                    roomLabel.append(element('span', '', '💬 '), element('span', '', roomInfo.name));
-                    roomRow.appendChild(roomLabel);
-
-                    if (roomInfo.unread > 0) {
-                        roomRow.appendChild(element('span', 'thk-tree-badge', String(roomInfo.unread)));
-                    }
-
-                    roomRow.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        if (window.RM?.selectRoom) window.RM.selectRoom(rid);
-                        else window.location.hash = '#!rid' + rid;
-                    });
-                    sublist.appendChild(roomRow);
-                });
-                node.appendChild(sublist);
-            }
-
-            container.appendChild(node);
-        }
-
-        const treeContainer = element('div', 'thk-tree-container');
-        tree.forEach(f => renderFolder(f, treeContainer));
-        panelNode.appendChild(treeContainer);
-    }
+    function getRoomTree() { return window.__thkRoomFolders?.getTree() || []; }
+    function mountRoomTree() { window.__thkRoomFolders?.mount(); }
 
     function syncToolbar() {
         syncCoreTheme();
@@ -964,10 +690,10 @@
         getShortkeys,
         setShortkey,
         getAllRooms,
-        autoGroupRooms,
+        getRoomDirectory,
+        loadRoomDirectory,
         mountRoomTree,
-        getRoomTree,
-        saveRoomTree
+        getRoomTree
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

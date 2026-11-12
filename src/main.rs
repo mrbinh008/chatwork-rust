@@ -304,7 +304,7 @@ mod ui_asset_tests {
     fn initialization_contains_complete_valid_ui_sources() {
         let script=super::build_init_script(1.0);
         let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        for name in ["injected.js","toolkit.js","downloads.js","files.js","file-preview.js","update-ui.js"] {
+        for name in ["injected.js","toolkit.js","room-folders.js","folder-auto-group.js","downloads.js","files.js","file-preview.js","update-ui.js"] {
             let source=std::fs::read_to_string(root.join(name)).unwrap().replace("__ZOOM__","1").replace("__VERSION__",crate::app::APP_VERSION);
             assert!(script.contains(&source),"Embedded script differs from source: {name}");
         }
@@ -316,8 +316,10 @@ mod ui_asset_tests {
 fn build_init_script(zoom: f64) -> String {
     let css = serde_json::to_string(embedded_text(include_bytes!("ui.css"))).expect("UI CSS is serializable");
     let brand_icon = serde_json::to_string(include_str!("../assets/branding/icon.svg")).expect("Brand icon is serializable");
-    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}\n{}", css, brand_icon,
+    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}", css, brand_icon,
         embedded_text(include_bytes!("injected.js")), embedded_text(include_bytes!("toolkit.js")),
+        embedded_text(include_bytes!("room-folders.js")),
+        embedded_text(include_bytes!("folder-auto-group.js")),
         embedded_text(include_bytes!("downloads.js")), embedded_text(include_bytes!("files.js")),
         embedded_text(include_bytes!("file-preview.js")), embedded_text(include_bytes!("update-ui.js")));
     script

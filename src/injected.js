@@ -1539,6 +1539,13 @@
     }
 
     // ── 12. Quick Action Toolbar (SAME ROW WITH CHATWORK TOOLS) ───────────────
+    const formattingIcons = [
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>',
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="7" y1="6" x2="13" y2="6"></line><line x1="7" y1="14" x2="17" y2="14"></line></svg>',
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="3 2"></line></svg>',
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+    ];
     function createToolbarElement(isLi) {
         const group = document.createElement(isLi ? 'li' : 'div');
         group.id = 'thk-toolbar-inline';
@@ -1548,22 +1555,22 @@
         group.addEventListener('mousedown', e => e.preventDefault());
         group.innerHTML = `
             <button type="button" class="thk-icon-btn" id="thkBtnInfo" title="Thẻ Info (Ctrl+I / Cmd+I)">
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                ${formattingIcons[0]}
             </button>
             <button type="button" class="thk-icon-btn" id="thkBtnInfoTitle" title="Thẻ Info có Tiêu đề (Ctrl+Shift+I / Cmd+Shift+I)">
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="7" y1="6" x2="13" y2="6"></line><line x1="7" y1="14" x2="17" y2="14"></line></svg>
+                ${formattingIcons[1]}
             </button>
             <button type="button" class="thk-icon-btn" id="thkBtnCode" title="Thẻ Code (Ctrl+K / Cmd+K)">
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                ${formattingIcons[2]}
             </button>
             <button type="button" class="thk-icon-btn" id="thkBtnHr" title="Đường kẻ ngang [hr] (Ctrl+H / Cmd+H)">
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="3 2"></line></svg>
+                ${formattingIcons[3]}
             </button>
             <button type="button" class="thk-icon-btn thk-btn-req" id="thkBtnLeaveRequest" title="Tạo đơn nghỉ / Báo bận (Ctrl+Shift+L / Cmd+Shift+L)">
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M9 16l2 2 4-4"></path></svg>
             </button>
             <button type="button" class="thk-icon-btn thk-btn-preview" id="thkBtnMarkdownPreview" title="Xem trước tin nhắn (Ctrl+Shift+P / Cmd+Shift+P)">
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                ${formattingIcons[4]}
             </button>
         `;
 
@@ -1597,6 +1604,72 @@
         } else {
             existing?.remove();
             sendTool.appendChild(createToolbarElement(isList));
+        }
+    }
+
+    const descriptionToolbars = new Map();
+    const descriptionPopupTitles = '.sc-iHmpnF.eiYmEZ, [class*="modal"][class*="title"], [class*="modal"][class*="Title"], [class*="dialog"][class*="title"], [class*="dialog"][class*="Title"], [role="heading"], h1, h2, h3';
+    function getRoomDescriptionEditor(header) {
+        const available = editor => editor && editor !== getChatText() && !editor.disabled && !editor.readOnly && !editor.hidden
+            && !editor.closest('#thk-modal-backdrop, #thk-preview-modal-backdrop, #thk-toolkit-panel, [hidden], [aria-hidden="true"]')
+            && editor.getClientRects().length > 0;
+        // Find the editor in the same popup as its title, including portal dialogs
+        // whose generated classes do not expose a dialog role.
+        for (let scope = header.parentElement; scope && scope !== document.body; scope = scope.parentElement) {
+            if (scope.matches('#CurrentSelectedRoom, #_sideContent, #_roomListArea, aside, main, #thk-modal-backdrop, #thk-preview-modal-backdrop, #thk-toolkit-panel')) break;
+            const editors = [...scope.querySelectorAll('textarea')].filter(available);
+            if (editors.length === 1) return editors[0];
+        }
+        return null;
+    }
+
+    function setupDescriptionToolbar() {
+        const language = window.__thkToolkit?.getLanguage() || (navigator.language || 'en').slice(0, 2);
+        const labels = {
+            vi: ['Định dạng mô tả nhóm', 'Info', 'Tiêu đề', 'Code', 'Đường kẻ', 'Xem trước'],
+            en: ['Group description formatting', 'Info', 'Title', 'Code', 'Divider', 'Preview'],
+            ja: ['グループ概要の書式', 'Info', 'タイトル', 'Code', '区切り線', 'プレビュー']
+        }[language] || ['Group description formatting', 'Info', 'Title', 'Code', 'Divider', 'Preview'];
+        const activeTitles = new Set();
+        const activeEditors = new Set();
+        document.querySelectorAll(descriptionPopupTitles).forEach(header => {
+            if (!/description|mô tả|概要|説明/i.test(header.textContent || '')) return;
+            const editor = getRoomDescriptionEditor(header);
+            if (!editor || activeEditors.has(editor)) return;
+            activeEditors.add(editor); activeTitles.add(header);
+            let toolbar = descriptionToolbars.get(header);
+            if (!toolbar) {
+                toolbar = document.createElement('span');
+                toolbar.className = 'thk-description-toolbar';
+                toolbar.setAttribute('role', 'group');
+                toolbar.addEventListener('mousedown', event => event.preventDefault());
+                const actions = [() => wrapInfo(false), () => wrapInfo(true), wrapCode, insertHr, openMarkdownPreviewModal];
+                actions.forEach((action, index) => {
+                    const control = document.createElement('button');
+                    control.type = 'button'; control.className = 'thk-icon-btn thk-description-shortcut';
+                    control.innerHTML = formattingIcons[index];
+                    control.addEventListener('click', event => {
+                        event.preventDefault(); event.stopPropagation();
+                        // Resolve again after React rerenders; never fall back to the chat draft.
+                        const target = getRoomDescriptionEditor(header);
+                        if (!target) return;
+                        target.focus(); action();
+                    });
+                    toolbar.appendChild(control);
+                });
+                descriptionToolbars.set(header, toolbar);
+            }
+            if (toolbar.getAttribute('aria-label') !== labels[0]) toolbar.setAttribute('aria-label', labels[0]);
+            [...toolbar.children].forEach((control, index) => {
+                if (control.title !== labels[index + 1]) control.title = labels[index + 1];
+                if (control.getAttribute('aria-label') !== labels[index + 1]) control.setAttribute('aria-label', labels[index + 1]);
+            });
+            let anchor = header;
+            while (anchor.parentElement && !anchor.parentElement.contains(editor)) anchor = anchor.parentElement;
+            if (toolbar.parentElement !== anchor.parentElement || anchor.nextElementSibling !== toolbar) anchor.after(toolbar);
+        });
+        for (const [header, toolbar] of descriptionToolbars) {
+            if (!activeTitles.has(header)) { toolbar.remove(); descriptionToolbars.delete(header); }
         }
     }
 
@@ -2327,11 +2400,13 @@
     function initDynamicWatchers() {
         injectThkStyles();
         setupQuickToolbar();
+        setupDescriptionToolbar();
         attachCodeCopyButtons();
 
         const observer = new MutationObserver(function() {
             injectThkStyles();
             setupQuickToolbar();
+            setupDescriptionToolbar();
             attachCodeCopyButtons();
         });
 
@@ -2343,6 +2418,7 @@
         setInterval(function() {
             injectThkStyles();
             setupQuickToolbar();
+            setupDescriptionToolbar();
             attachCodeCopyButtons();
         }, 1000);
     }

@@ -73,7 +73,7 @@ cp assets/AppIcon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 sed -E '/<key>CFBundle(ShortVersionString|Version)<\/key>/{n;s#<string>[^<]*</string>#<string>'"$VERSION"'</string>#;}' mac/Info.plist > "$APP_BUNDLE/Contents/Info.plist"
 if [[ "$BACKEND" == swift ]]; then
   /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 12.0' "$APP_BUNDLE/Contents/Info.plist"
-  cp src/ui.css src/injected.js src/toolkit.js src/downloads.js src/files.js src/file-preview.js src/update-ui.js \
+  cp src/ui.css src/injected.js src/toolkit.js src/room-folders.js src/folder-auto-group.js src/downloads.js src/files.js src/file-preview.js src/update-ui.js \
     assets/branding/icon.svg ota/macos-update.sh "$APP_BUNDLE/Contents/Resources/"
   # Embed Swift compatibility libraries when the selected toolchain needs them.
   mkdir -p "$APP_BUNDLE/Contents/Frameworks"

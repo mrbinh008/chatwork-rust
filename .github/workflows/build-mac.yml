@@ -28,12 +28,15 @@ jobs:
 
       - name: Test Chatwork extensions
         run: |
-          for check in toolkit files downloads file-preview branding ui-render request-navigation formatting-editors mention; do
+          for check in toolkit room-directory native-folders folder-auto files downloads file-preview branding ui-render request-navigation formatting-editors description-toolbar mention; do
             node "examples/$check-regression.cjs"
           done
 
       - name: Test Swift and build Universal macOS app
-        run: bash build-mac.sh --universal
+        run: |
+          bash build-mac.sh --universal
+          version=$(awk -F '"' '/^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
+          node examples/mac-bundle-regression.cjs "dist/THK-Chat-v$version-macOS-Universal/THK-Chat.app"
 
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4

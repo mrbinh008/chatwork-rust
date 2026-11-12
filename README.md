@@ -2,6 +2,10 @@
 
 Bản tái triển khai ứng dụng Chatwork Desktop: Windows dùng Rust, macOS dùng Swift + AppKit + WKWebView. Không đóng gói Electron/Node.js trong ứng dụng.
 
+Thư mục phòng được tổ chức ngay trên các danh mục Chatwork có sẵn. Nút `+` trên mỗi danh mục tạo thư mục con; nút `↳` chọn thư mục cha. Danh mục mới và danh sách phòng được lưu qua chức năng native của Chatwork; quan hệ cha/con được lưu riêng cho từng tài khoản trên thiết bị hiện tại. Menu sửa/xóa và thao tác chọn phòng của Chatwork vẫn dùng giao diện native.
+
+Danh sách chọn phòng lấy toàn bộ phòng và liên lạc từ kho dữ liệu native, cập nhật tên liên lạc theo lô và có bộ lọc Nhóm/Người dùng/My Chat. Người liên lạc chưa có phòng chat được ghi rõ trong danh sách. Nút `⚡` xem trước và gom nhóm theo `[prefix]`, `【prefix】`, dấu `/` hoặc ` - `; có thể bật tự động thêm nhóm mới. Các lần gom sau dùng lại danh mục theo nhánh và giữ phòng đã có.
+
 ## macOS native bằng Swift
 
 Bản build macOS mặc định dùng Swift + AppKit + WKWebView, yêu cầu macOS 12 trở lên. Windows tiếp tục dùng Rust. Phần cửa sổ, menu/phím tắt Command, menu bar, Dock badge, thông báo kèm ảnh, hộp thoại chọn/tải file và cập nhật được xử lý bằng API macOS. Nội dung Chatwork và các tiện ích cây thư mục, shortcut, quản lý/xem trước file vẫn dùng chung JavaScript/CSS trong `src/`.
@@ -18,6 +22,15 @@ Mã Swift ở `mac/Native/`. Script chạy kiểm thử policy và type-check Ap
 Cookie và website storage dùng kho bền vững mặc định của WebKit; cấu hình cửa sổ, zoom và thư mục tải dùng UserDefaults. Chuyển từ bản Rust có thể cần đăng nhập lại; chưa có bước chuyển đổi cấu hình Rust sang UserDefaults. Thông báo và cập nhật dùng callback; lịch kiểm tra cập nhật mỗi 6 giờ có tolerance 5 phút. Chưa có số đo CPU/RAM so sánh với bản Rust; phần web vẫn dùng các observer/timer chung.
 
 Kiểm thử Swift riêng: `bash mac/test-native.sh`. Cần chạy thử đăng nhập/SSO, thông báo, tải đè file và cập nhật trên Mac trước khi phát hành. Máy Windows không biên dịch AppKit; `build-mac-docker.ps1` giữ đường cross-build **Rust cũ**, hoặc có thể chọn `THK_MAC_BACKEND=rust bash build-mac.sh --universal`.
+
+## Bản 2.26.4
+
+- Windows và macOS Swift dùng chung các cải tiến danh mục phòng, danh sách nhóm/người dùng và auto gom theo prefix.
+- Tổ chức cây ngay trên danh mục native của Chatwork; có tạo thư mục con và chọn thư mục cha. Quan hệ cha/con và quy tắc auto gom được lưu riêng theo tài khoản trên thiết bị.
+- Sửa ô chọn trống: tên chat cá nhân được lấy từ người liên lạc tương ứng; đọc toàn bộ kho phòng/liên lạc native, cập nhật tên theo lô, lọc Nhóm/Người dùng/My Chat và giữ lựa chọn khi tải lại.
+- Nút `⚡` xem trước các nhánh theo `[prefix]`, `【prefix】`, `/`, ` - `; dùng lại danh mục cũ, giữ phòng đang có và hỗ trợ tự thêm nhóm mới.
+- Icon định dạng nằm trên ô nhập trong popup “Chỉnh sửa mô tả”, dùng chung SVG với thanh soạn tin. Sửa phím tắt bị xử lý hai lần.
+- macOS Universal tiếp tục yêu cầu macOS 12+, ký ad-hoc. CI kiểm thử Swift, tiện ích web và nội dung gói `.app` trước khi phát hành.
 
 ## Bản 2.26.3
 

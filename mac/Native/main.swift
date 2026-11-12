@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             window.__thk_ui_css = \(WebPolicy.scriptValue(css));
             window.__thk_brand_icon_svg = \(WebPolicy.scriptValue(brand));
             """
-            for file in ["injected.js", "toolkit.js", "downloads.js", "files.js", "file-preview.js", "update-ui.js"] {
+            for file in ["injected.js", "toolkit.js", "room-folders.js", "folder-auto-group.js", "downloads.js", "files.js", "file-preview.js", "update-ui.js"] {
                 script += "\n" + (try String(contentsOf: resources.appendingPathComponent(file), encoding: .utf8))
             }
             script += "\n}"

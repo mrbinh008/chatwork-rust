@@ -72,6 +72,8 @@ class UINode {
     set textContent(value) { this.children=[]; this.nodeValue=''; if(String(value))this.appendChild(new UINode('#text',String(value))); }
     get textContent() { return this.tagName==='#TEXT'?this.nodeValue:this.children.map(node=>node.textContent).join(''); }
     get parentElement() { return this.parentNode; }
+    get nextElementSibling() { return this.parentNode?.children[this.parentNode.children.indexOf(this)+1] || null; }
+    contains(node) { return this === node || this.children.some(child=>child.contains(node)); }
     get isConnected() { return this===uiDocument?.documentElement||!!this.parentNode?.isConnected; }
     replaceChildren(...nodes) { for(const node of this.children)node.parentNode=null;this.children=[];this.append(...nodes); }
     appendChild(node) { node.remove(); this.children.push(node); node.parentNode=this; return node; }
@@ -87,7 +89,7 @@ class UINode {
     click() { if(!this.disabled)this.dispatchEvent(new UIEvent('click')); }
     focus() { uiDocument.activeElement=this; }
     setSelectionRange(start,end) { this.selectionStart=start;this.selectionEnd=end; }
-    matches(query) {return query.split(',').some(item=>{item=item.trim();if(item.startsWith('#'))return this.id===item.slice(1);if(item.startsWith('.'))return this.classList.contains(item.slice(1));if(item.startsWith('['))return this.getAttribute(item.slice(1,-1))!==null;return this.tagName===item.toUpperCase();});}
+    matches(query) {return query.split(',').some(item=>{item=item.trim();if(item.startsWith('#'))return this.id===item.slice(1);if(item.startsWith('.'))return this.classList.contains(item.slice(1));const attr=item.match(/^\[([^=*]+)(\*)?(?:="([^"]*)")?\]$/);if(attr){const value=attr[1]==='class'?this.className:this.getAttribute(attr[1]);return attr[3]===undefined?value!==null:attr[2]?value?.includes(attr[3]):value===attr[3];}return this.tagName===item.toUpperCase();});}
     querySelectorAll(query) { const result=[]; for(const node of this.children){if(node.matches(query))result.push(node);result.push(...node.querySelectorAll(query));}return result; }
     querySelector(query) { return this.querySelectorAll(query)[0]||null; }
     closest(query) { return this.matches(query)?this:this.parentNode?.closest(query)||null; }
@@ -156,76 +158,18 @@ uiWindow.__thkToolkit.setShortkey('info', 'Ctrl+Alt+I');
 assert.equal(uiWindow.__thkToolkit.getShortkeys().info, 'Ctrl+Alt+I');
 assert.equal(JSON.parse(uiStore.get('thk-toolkit.shortkeys')).info, 'Ctrl+Alt+I');
 
-// Room Folder Tree & Auto-group tests
-const rooms = uiWindow.__thkToolkit.getAllRooms();
-assert.ok(rooms.length > 0, 'Finds available rooms');
-assert.equal(uiWindow.__thkToolkit.getRoomTree().length, 0, 'Initially no room folders');
-uiWindow.CW.application.domainServiceContext.roomService.roomRepository.entities['101'] = {
-    name: { value: 'THK / Frontend / Team A' },
-    unreadNumber: { value: 3 }
-};
-uiWindow.CW.application.domainServiceContext.roomService.roomRepository.entities['102'] = {
-    name: { value: 'THK / Frontend / Team B' },
-    unreadNumber: { value: 1 }
-};
-const didAutoGroup = uiWindow.__thkToolkit.autoGroupRooms();
-assert.equal(didAutoGroup, true, 'Auto group rooms into hierarchy');
-const tree = uiWindow.__thkToolkit.getRoomTree();
-assert.ok(tree.length > 0, 'Tree contains generated folders');
-const thkFolder = tree.find(f => f.name === 'THK');
-assert.ok(thkFolder, 'THK folder was created');
-assert.equal(thkFolder.children[0].name, 'Frontend');
-assert.ok(thkFolder.children[0].rooms.includes('101'));
-assert.ok(thkFolder.children[0].rooms.includes('102'));
+let codeShortcutCalls = 0;
+const codeShortcutButton = new UINode('button'); codeShortcutButton.id = 'thkBtnCode';
+codeShortcutButton.addEventListener('click', () => codeShortcutCalls++); toolbar.appendChild(codeShortcutButton);
+const codeKeyEvent = new UIEvent('keydown', {key:'k',ctrlKey:true,metaKey:false,shiftKey:false,altKey:false});
+assert.equal(uiWindow.__thk_matchCustomShortkey(codeKeyEvent), true);
+assert.equal(uiWindow.__thk_matchCustomShortkey(codeKeyEvent), true);
+assert.equal(codeShortcutCalls, 1, 'Window and document listeners handle one key event exactly once');
+const composingKey = new UIEvent('keydown', {key:'k',ctrlKey:true,metaKey:false,shiftKey:false,altKey:false,isComposing:true});
+assert.equal(uiWindow.__thk_matchCustomShortkey(composingKey), false);
+assert.equal(codeShortcutCalls, 1, 'IME composition does not trigger formatting');
+codeShortcutButton.remove();
 
-// Exercise the actual add/edit dialogs through the sidebar controls.
-const sidebar = new UINode('div'); sidebar.id = '_roomListArea'; uiDocument.body.append(sidebar);
-const toolkit = uiWindow.__thkToolkit;
-toolkit.saveRoomTree([{id:'parent',name:'Parent',collapsed:true,rooms:[],children:[]}]);
-toolkit.mountRoomTree(true);
-function folderRow(name) {
-    return uiDocument.getElementById('thk-room-tree-panel').querySelectorAll('.thk-tree-node')
-        .map(node=>node.children[0]).find(row=>row.querySelector('.thk-tree-label').textContent.trim().endsWith(name));
-}
-function folderTool(name, index) { folderRow(name).querySelectorAll('.thk-tree-tool-btn')[index].click(); }
-function saveFolder(name) {
-    const modal = uiDocument.getElementById('thk-toolkit-panel');
-    modal.querySelector('input').value = name;
-    modal.querySelector('.thk-btn-primary').click();
-    assert.equal(uiDocument.getElementById('thk-toolkit-panel'), null);
-}
-folderTool('Parent', 0);
-assert.equal(uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value, 'parent');
-saveFolder('Child');
-let savedTree = toolkit.getRoomTree();
-assert.equal(savedTree.length, 1, 'Adding a child does not create another root');
-assert.equal(savedTree[0].children[0].name, 'Child');
-assert.equal(savedTree[0].collapsed, false, 'Creating a child expands its parent');
-assert.ok(folderRow('Child'), 'New child is visible immediately');
-folderTool('Child', 0); saveFolder('Grandchild');
-savedTree = toolkit.getRoomTree();
-const childId = savedTree[0].children[0].id;
-const grandchildId = savedTree[0].children[0].children[0].id;
-assert.equal(savedTree[0].children[0].children[0].name, 'Grandchild');
-folderTool('Child', 1);
-let folderDialog = uiDocument.getElementById('thk-toolkit-panel');
-assert.equal(folderDialog.querySelector('select').value, 'parent', 'Editing retains the existing parent');
-assert.ok(!folderDialog.querySelectorAll('option').some(option=>[childId,grandchildId].includes(option.value)), 'Cannot move a folder into itself or its descendants');
-saveFolder('Renamed child');
-savedTree = toolkit.getRoomTree();
-assert.equal(savedTree.length, 1);
-assert.equal(savedTree[0].children[0].name, 'Renamed child');
-assert.equal(savedTree[0].children[0].children[0].id, grandchildId, 'Renaming preserves the subtree');
-folderTool('Grandchild', 1);
-assert.equal(uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value, childId, 'Parent is retained at deeper levels');
-uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value = '';
-saveFolder('Moved to root');
-savedTree = toolkit.getRoomTree();
-assert.equal(savedTree.length, 2, 'Explicitly selecting root still moves the folder');
-assert.equal(savedTree[0].children[0].children.length, 0);
-folderTool('Moved to root', 1);
-uiDocument.getElementById('thk-toolkit-panel').querySelector('select').value = childId;
-saveFolder('Moved back');
-assert.equal(toolkit.getRoomTree()[0].children[0].children[0].name, 'Moved back');
-
-console.log('Toolkit dialog, toolbar visibility, custom shortkeys and room tree checks passed.');
+assert.ok(uiWindow.__thkToolkit.getAllRooms().length > 0);
+assert.equal(uiWindow.__thkToolkit.getRoomTree().length, 0, 'No standalone room tree is fabricated without native categories');
+console.log('Toolkit dialogs, toolbar visibility and shortcut checks passed.');

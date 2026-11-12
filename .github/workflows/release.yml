@@ -48,10 +48,16 @@ jobs:
           version=$(awk -F '"' '/^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
           if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then echo 'Git tag and Cargo version must match'; exit 1; fi
           node examples/toolkit-regression.cjs
+          node examples/native-folders-regression.cjs
+          node examples/room-directory-regression.cjs
+          node examples/folder-auto-regression.cjs
+          node examples/description-toolbar-regression.cjs
+          node examples/formatting-editors-regression.cjs
           node examples/files-regression.cjs
           node examples/downloads-regression.cjs
           node examples/file-preview-regression.cjs
           bash build-mac.sh --universal
+          node examples/mac-bundle-regression.cjs "dist/THK-Chat-v$version-macOS-Universal/THK-Chat.app"
       - uses: actions/upload-artifact@v4
         with:
           name: release-macos
