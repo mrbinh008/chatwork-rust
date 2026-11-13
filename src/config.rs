@@ -64,6 +64,8 @@ pub struct AppConfig {
     pub save_credential: bool,
     pub proxy_credential: Option<ProxyCredential>,
     pub download_dir: Option<String>,
+    #[serde(default)]
+    pub app_icon: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -79,6 +81,7 @@ impl Default for AppConfig {
             save_credential: false,
             proxy_credential: None,
             download_dir: None,
+            app_icon: None,
         }
     }
 }

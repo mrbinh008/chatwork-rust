@@ -48,6 +48,7 @@ enum UserEvent {
     InstallUpdate,
     UpdateUiReady,
     Updater(updater::Event),
+    SetAppIcon(String),
 }
 
 fn main() {
@@ -89,6 +90,7 @@ fn main() {
     eprintln!("[DEBUG 6] event_loop created");
 
     // ── Build main window ────────────────────────────────────────────────────
+    let initial_icon_variant = normalize_icon_variant(config.app_icon.as_deref().unwrap_or("original"));
     let wp = &config.window_params;
     let window = WindowBuilder::new()
         .with_title(APP_NAME)
@@ -96,7 +98,7 @@ fn main() {
         .with_min_inner_size(LogicalSize::new(400u32, 300u32))
         .with_position(LogicalPosition::new(wp.x, wp.y))
         .with_maximized(wp.maximized)
-        .with_window_icon(load_icon())
+        .with_window_icon(load_icon_for_variant(initial_icon_variant))
         .build(&event_loop)
         .expect("Failed to create window");
 
@@ -207,7 +209,7 @@ fn main() {
     let mut taskbar_mgr = taskbar::TaskbarManager::new();
 
     // ── System Tray ──────────────────────────────────────────────────────────
-    let (rgba, w, h) = load_tray_icon_rgba();
+    let (rgba, w, h) = load_tray_icon_rgba_for_variant(initial_icon_variant);
     let tray = tray::build_tray(rgba, w, h);
 
     // ── Event loop ───────────────────────────────────────────────────────────
@@ -316,7 +318,13 @@ mod ui_asset_tests {
 fn build_init_script(zoom: f64) -> String {
     let css = serde_json::to_string(embedded_text(include_bytes!("ui.css"))).expect("UI CSS is serializable");
     let brand_icon = serde_json::to_string(include_str!("../assets/branding/icon.svg")).expect("Brand icon is serializable");
-    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}\n{}\n{}", css, brand_icon,
+    let brand_icons = serde_json::json!({
+        "original": include_str!("../assets/branding/icon.svg"),
+        "thk-signature": include_str!("../assets/branding/icon-signature.svg"),
+        "dog": include_str!("../assets/branding/icon-dog.svg"),
+    });
+    let brand_icons_json = serde_json::to_string(&brand_icons).expect("Brand icons serializable");
+    let script = format!("window.__thk_ui_css = {}; window.__thk_brand_icons = {}; window.__thk_brand_icon_svg = {};\n{}\n{}\n{}\n{}\n{}\n{}\n{}", css, brand_icons_json, brand_icon,
         embedded_text(include_bytes!("injected.js")), embedded_text(include_bytes!("toolkit.js")),
         embedded_text(include_bytes!("room-folders.js")),
         embedded_text(include_bytes!("downloads.js")), embedded_text(include_bytes!("files.js")),
@@ -350,6 +358,7 @@ fn handle_ipc_message(msg: &str, proxy: &tao::event_loop::EventLoopProxy<UserEve
                 app::IpcMessage::DownloadUpdate => { let _ = proxy.send_event(UserEvent::DownloadUpdate); }
                 app::IpcMessage::InstallUpdate => { let _ = proxy.send_event(UserEvent::InstallUpdate); }
                 app::IpcMessage::UpdateUiReady => { let _ = proxy.send_event(UserEvent::UpdateUiReady); }
+                app::IpcMessage::SetAppIcon(variant) => { let _ = proxy.send_event(UserEvent::SetAppIcon(variant)); }
                 _ => {}
             }
         }
@@ -570,6 +579,24 @@ fn handle_user_event(
         UserEvent::SaveConfig => {
             save_config_now(state);
         }
+        UserEvent::SetAppIcon(variant) => {
+            let normalized = normalize_icon_variant(&variant);
+            info!("Changing app icon to variant: {}", normalized);
+            {
+                let mut s = state.lock().unwrap();
+                s.config.app_icon = Some(normalized.to_string());
+            }
+            save_config_now(state);
+            if let Some(w_icon) = load_icon_for_variant(normalized) {
+                window.set_window_icon(Some(w_icon));
+            }
+            if let Some(t) = tray {
+                let (rgba, w, h) = load_tray_icon_rgba_for_variant(normalized);
+                if let Ok(t_icon) = tray_icon::Icon::from_rgba(rgba, w, h) {
+                    let _ = t.set_icon(Some(t_icon));
+                }
+            }
+        }
         UserEvent::Quit => {
             save_config_now(state);
             *control_flow = ControlFlow::Exit;
@@ -742,14 +769,40 @@ fn show_about_dialog() {
     }
 }
 
-fn load_icon() -> Option<Icon> {
-    const RGBA: &[u8] = include_bytes!("../assets/thk_32.rgba");
-    Icon::from_rgba(RGBA.to_vec(), 32, 32).ok()
+fn normalize_icon_variant(variant: &str) -> &'static str {
+    match variant.to_ascii_lowercase().as_str() {
+        "thk-signature" | "signature" => "thk-signature",
+        "dog" | "dog-original" | "mascot" => "dog",
+        _ => "original",
+    }
 }
 
+#[allow(dead_code)]
+fn load_icon() -> Option<Icon> {
+    load_icon_for_variant("original")
+}
+
+fn load_icon_for_variant(variant: &str) -> Option<Icon> {
+    let rgba = match normalize_icon_variant(variant) {
+        "thk-signature" => include_bytes!("../assets/thk_signature_32.rgba").as_slice(),
+        "dog" => include_bytes!("../assets/thk_dog_32.rgba").as_slice(),
+        _ => include_bytes!("../assets/thk_32.rgba").as_slice(),
+    };
+    Icon::from_rgba(rgba.to_vec(), 32, 32).ok()
+}
+
+#[allow(dead_code)]
 fn load_tray_icon_rgba() -> (Vec<u8>, u32, u32) {
-    const RGBA: &[u8] = include_bytes!("../assets/thk_16.rgba");
-    (RGBA.to_vec(), 16, 16)
+    load_tray_icon_rgba_for_variant("original")
+}
+
+fn load_tray_icon_rgba_for_variant(variant: &str) -> (Vec<u8>, u32, u32) {
+    let rgba = match normalize_icon_variant(variant) {
+        "thk-signature" => include_bytes!("../assets/thk_signature_16.rgba").as_slice(),
+        "dog" => include_bytes!("../assets/thk_dog_16.rgba").as_slice(),
+        _ => include_bytes!("../assets/thk_16.rgba").as_slice(),
+    };
+    (rgba.to_vec(), 16, 16)
 }
 
 #[cfg(windows)]

@@ -22,3 +22,5 @@ Thumbs.db
 
 # Temporary scripts
 mac_compile_inner.sh
+*.zip
+

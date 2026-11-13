@@ -108,11 +108,13 @@ const leave=new UINode('button');leave.id='thkBtnLeaveRequest';toolbar.append(le
 const editor=new UINode('textarea');editor.id='_chatText';editor.value='Hello ';editor.setSelectionRange(6,6);
 uiDocument.body.append(toolbar,editor);editor.focus();
 const uiStore=new Map();
-let transferBlob, transferDownloads=[], transferImports=[], mergeEnabled=true, mergeSettingsError=false, mergeChanges=[], roomMounts=0, sidebarScrolling=false, uiObserver;
+let transferBlob, transferDownloads=[], transferImports=[], mergeEnabled=true, mergeSettingsError=false, mergeChanges=[], roomMounts=0, sidebarScrolling=false, uiObserver, ipcMessages=[];
 const uiTimers=[];
 const transferSnapshot={format:'thk-chat.folder-tree',version:1,accountId:'7',folders:[{id:'a',parentId:''}]};
 const uiWindow={...window,addEventListener(){},removeEventListener(){},
     __thk_startDownload:(url,filename)=>transferDownloads.push({url,filename}),
+    __chatwork_ipc:{send:(type,payload)=>ipcMessages.push({type,payload})},
+    __thk_brand_icons:{original:'<svg>original</svg>','thk-signature':'<svg>signature</svg>',dog:'<svg>dog</svg>'},
     __thkRoomFolders:{mount(){roomMounts++;},isScrolling:()=>sidebarScrolling,isMergeEnabled:()=>mergeEnabled,setMergeEnabled(enabled){if(mergeSettingsError)throw new Error(`Storage full`);mergeEnabled=enabled;mergeChanges.push(enabled);},getTree:()=>[],exportTree:()=>transferSnapshot,
         previewImport:()=>({count:1,changes:1,skipped:0}),importTree:data=>{transferImports.push(data);return {count:1,changes:1,skipped:0};}}
 };
@@ -133,6 +135,23 @@ let language=dialog.querySelector('select');language.value='vi';language.dispatc
 assert.equal(leave.hidden,true);assert.equal(uiDocument.getElementById('thkToolkit-pr').hidden,false);
 dialog=uiDocument.getElementById('thk-toolkit-panel');
 assert.equal(dialog.querySelectorAll('select').length,2,'Language select and shortcut scope select');
+const iconCards = dialog.querySelectorAll('.thk-app-icon-card');
+assert.equal(iconCards.length, 3, 'Settings dialog provides 3 app icon choices (original, thk-signature, dog)');
+assert.equal(iconCards[0].classList.contains('active'), true, 'Default selected icon is original');
+iconCards[1].click();
+assert.equal(uiStore.get('thk-toolkit.appIcon'), '"thk-signature"', 'Selecting signature saves to localStorage');
+assert.equal(iconCards[1].classList.contains('active'), true);
+assert.equal(iconCards[0].classList.contains('active'), false);
+assert.ok(ipcMessages.some(m => m.type === 'SetAppIcon' && m.payload === 'thk-signature'), 'IPC SetAppIcon sent for signature');
+iconCards[2].click();
+assert.equal(uiStore.get('thk-toolkit.appIcon'), '"dog"', 'Selecting dog saves to localStorage');
+assert.equal(iconCards[2].classList.contains('active'), true);
+assert.equal(iconCards[1].classList.contains('active'), false);
+assert.ok(ipcMessages.some(m => m.type === 'SetAppIcon' && m.payload === 'dog'), 'IPC SetAppIcon sent for dog');
+iconCards[0].click();
+assert.equal(uiStore.get('thk-toolkit.appIcon'), '"original"', 'Selecting original restores original icon');
+assert.equal(iconCards[0].classList.contains('active'), true);
+assert.ok(ipcMessages.some(m => m.type === 'SetAppIcon' && m.payload === 'original'), 'IPC SetAppIcon sent for original');
 const scopeSelect = dialog.querySelectorAll('select')[1];
 assert.equal(scopeSelect.value, 'room', 'Default scope is current group');
 const firstShortcut=dialog.querySelector('input');firstShortcut.checked=false;firstShortcut.dispatchEvent(new UIEvent('change'));

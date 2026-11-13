@@ -300,3 +300,19 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 .thk-native-unified-room-scroll { display:flex!important; flex-direction:column!important; min-height:0!important; overflow-y:auto!important; overflow-x:hidden!important; }
 .thk-native-room-flow { position:static!important; inset:auto!important; width:100%!important; height:auto!important; max-height:none!important; min-height:0!important; overflow:visible!important; flex:0 0 auto!important; }
 .thk-native-room-divider { display:none!important; }
+
+/* ── App Icon Picker in Settings ── */
+.thk-app-icon-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:8px 0 16px; }
+.thk-app-icon-card { display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 8px; border:1.5px solid var(--thk-border); border-radius:8px; background:var(--thk-surface); cursor:pointer; user-select:none; transition:border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.thk-app-icon-card:hover { border-color:var(--thk-muted); }
+.thk-app-icon-card:focus-visible { outline:2px solid #d5101b; outline-offset:2px; }
+.thk-app-icon-card.active { border-color:#d5101b!important; background:var(--thk-tint)!important; box-shadow:0 0 0 1px #d5101b!important; }
+.thk-app-icon-preview { width:44px; height:44px; margin-bottom:8px; display:flex; align-items:center; justify-content:center; }
+.thk-app-icon-preview svg, .thk-app-icon-preview img { width:100%; height:100%; object-fit:contain; border-radius:8px; }
+.thk-app-icon-title { font-size:12px; font-weight:600; color:var(--thk-text); margin-bottom:4px; }
+.thk-app-icon-desc { font-size:11px; color:var(--thk-muted); line-height:1.35; }
+@media(max-width:520px) {
+  .thk-app-icon-grid { grid-template-columns:1fr; }
+  .thk-app-icon-card { flex-direction:row; text-align:left; gap:12px; padding:8px 12px; }
+  .thk-app-icon-preview { margin-bottom:0; flex:0 0 40px; width:40px; height:40px; }
+}

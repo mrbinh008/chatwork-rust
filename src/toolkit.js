@@ -11,11 +11,29 @@
     Object.assign(translations.vi, { addChildFolder:'+ Thư mục con', folderTreeHint:'Tạo thư mục cha, rồi bấm “+ Thư mục con” để nhóm các phòng theo từng nhánh.', folderParentMissing:'Thư mục cha không còn tồn tại. Hãy chọn lại thư mục cha.' });
     Object.assign(translations.en, { addChildFolder:'+ Subfolder', folderTreeHint:'Create a parent folder, then choose “+ Subfolder” to organize rooms into branches.', folderParentMissing:'The parent folder no longer exists. Choose another parent.' });
     Object.assign(translations.ja, { addChildFolder:'+ 子フォルダ', folderTreeHint:'親フォルダを作成し、「+ 子フォルダ」でルームを階層ごとに整理できます。', folderParentMissing:'親フォルダが見つかりません。別の親フォルダを選択してください。' });
+    Object.assign(translations.vi, { appIcon:'Biểu tượng ứng dụng', appIconHint:'Chọn biểu tượng logo hiển thị cho THK-Chat.', iconOriginal:'Cổ điển (Original)', iconOriginalDesc:'2 bong bóng chat với 3 chấm đỏ', iconSignature:'Chữ ký THK (Signature)', iconSignatureDesc:'Bong bóng chat với chữ ký THK', iconDog:'Mascot Cún THK (Mascot Dog)', iconDogDesc:'Chú cún THK đeo kính năng động' });
+    Object.assign(translations.en, { appIcon:'App Icon', appIconHint:'Choose the logo style for THK-Chat.', iconOriginal:'Original', iconOriginalDesc:'Two chat bubbles with 3 dots', iconSignature:'THK Signature', iconSignatureDesc:'Chat bubbles with THK lettering', iconDog:'THK Mascot Dog', iconDogDesc:'Energetic dog mascot with glasses' });
+    Object.assign(translations.ja, { appIcon:'アプリアイコン', appIconHint:'THK-Chatのロゴスタイルを選択します。', iconOriginal:'クラシック (Original)', iconOriginalDesc:'3つのドット付きチャットバブル', iconSignature:'THKシグネチャー', iconSignatureDesc:'THK文字入りチャットバブル', iconDog:'THKマスコット犬', iconDogDesc:'メガネをかけた元気な犬のマスコット' });
     function readSetting(key, fallback) { try { const value = localStorage.getItem('thk-toolkit.' + key); return value === null ? fallback : JSON.parse(value); } catch(e) { return fallback; } }
     function writeSetting(key, value) { try { localStorage.setItem('thk-toolkit.' + key, JSON.stringify(value)); return true; } catch(e) { return false; } }
+    function normalizeIconVariant(v) {
+        v = String(v || '').toLowerCase();
+        if (v.includes('sig')) return 'thk-signature';
+        if (v.includes('dog')) return 'dog';
+        return 'original';
+    }
+    function currentAppIcon() {
+        return normalizeIconVariant(readSetting('appIcon', window.__thk_brand_icon_variant || 'original'));
+    }
     const settings = {
-        language: readSetting('language', 'auto')
+        language: readSetting('language', 'auto'),
+        appIcon: currentAppIcon()
     };
+    const initialVariant = currentAppIcon();
+    if (window.__thk_brand_icons?.[initialVariant]) {
+        window.__thk_brand_icon_variant = initialVariant;
+        window.__thk_brand_icon_svg = window.__thk_brand_icons[initialVariant];
+    }
     function getLanguage() {
         const language = settings.language === 'auto' ? window.CW?.application?.languageCode?.value || document.documentElement.lang || navigator.language : settings.language;
         return String(language).startsWith('ja') ? 'ja' : String(language).startsWith('vi') ? 'vi' : 'en';
@@ -329,6 +347,67 @@
         [['auto','Auto'],['vi','Tiếng Việt'],['en','English'],['ja','日本語']].forEach(([value,label]) => { const option = element('option', '', label); option.value = value; select.appendChild(option); });
         select.value = settings.language; languageLabel.appendChild(select); view.body.appendChild(languageLabel);
         select.addEventListener('change', () => { settings.language = select.value; writeSetting('language', select.value); syncToolbar(); openSettings(); });
+
+        view.body.appendChild(element('h3', 'thk-sec-title', t('appIcon')));
+        view.body.appendChild(element('p', 'thk-leave-hint', t('appIconHint')));
+        const iconGrid = element('div', 'thk-app-icon-grid');
+        iconGrid.setAttribute('role', 'radiogroup');
+        iconGrid.setAttribute('aria-label', t('appIcon'));
+
+        const iconOptions = [
+            ['original', t('iconOriginal'), t('iconOriginalDesc')],
+            ['thk-signature', t('iconSignature'), t('iconSignatureDesc')],
+            ['dog', t('iconDog'), t('iconDogDesc')]
+        ];
+
+        const activeVariant = currentAppIcon();
+        const iconCards = [];
+
+        iconOptions.forEach(([key, title, desc]) => {
+            const card = element('div', 'thk-app-icon-card' + (key === activeVariant ? ' active' : ''));
+            card.setAttribute('role', 'radio');
+            card.setAttribute('aria-checked', key === activeVariant ? 'true' : 'false');
+            card.setAttribute('tabindex', '0');
+
+            const preview = element('div', 'thk-app-icon-preview');
+            const svgHtml = window.__thk_brand_icons?.[key] || (key === 'original' ? window.__thk_brand_icon_svg : '');
+            if (svgHtml) {
+                preview.innerHTML = svgHtml;
+            }
+            const titleEl = element('div', 'thk-app-icon-title', title);
+            const descEl = element('div', 'thk-app-icon-desc', desc);
+            card.append(preview, titleEl, descEl);
+
+            const selectThisIcon = () => {
+                iconCards.forEach(({ node, variantKey }) => {
+                    const active = variantKey === key;
+                    node.classList.toggle('active', active);
+                    node.setAttribute('aria-checked', active ? 'true' : 'false');
+                });
+                settings.appIcon = key;
+                writeSetting('appIcon', key);
+                window.__thk_brand_icon_variant = key;
+                if (window.__thk_brand_icons?.[key]) {
+                    window.__thk_brand_icon_svg = window.__thk_brand_icons[key];
+                }
+                view.backdrop.querySelectorAll('.thk-brand-icon').forEach(iconEl => {
+                    iconEl.innerHTML = window.__thk_brand_icon_svg;
+                });
+                window.__chatwork_ipc?.send('SetAppIcon', key);
+            };
+
+            card.addEventListener('click', selectThisIcon);
+            card.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectThisIcon();
+                }
+            });
+            iconCards.push({ node: card, variantKey: key });
+            iconGrid.appendChild(card);
+        });
+        view.body.appendChild(iconGrid);
+
         view.body.appendChild(element('h3', 'thk-sec-title', t('shortcuts')));
         view.body.appendChild(element('p', 'thk-leave-hint', t('shortcutHint')));
 

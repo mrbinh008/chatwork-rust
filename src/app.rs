@@ -68,4 +68,5 @@ pub enum IpcMessage {
     UpdateUiReady,
     Logout,
     WriteLogError(String),
+    SetAppIcon(String),
 }

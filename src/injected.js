@@ -46,6 +46,9 @@
         goForward: function() {
             window.__chatwork_ipc.send('GoForward', null);
         },
+        setAppIcon: function(variant) {
+            window.__chatwork_ipc.send('SetAppIcon', String(variant || 'original'));
+        },
         getVersion: function() {
             return APP_VERSION;
         },
