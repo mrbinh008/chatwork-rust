@@ -4,7 +4,7 @@
 
 Windows sử dụng **Rust + WebView2**; macOS sử dụng **Swift + AppKit + WKWebView**. Ứng dụng dùng WebView của hệ thống, không đóng gói Electron hoặc Node.js để chạy.
 
-**Phiên bản trong mã nguồn: 2.26.7** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
+**Phiên bản trong mã nguồn: 2.26.8** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
 
 ## Mục lục
 
@@ -73,7 +73,7 @@ Sau khi chọn một phòng chat:
 
 ### 1. Danh mục phòng theo cây thư mục
 
-Cây được hiển thị ngay trên **các danh mục có sẵn của Chatwork**, trong vùng danh sách phòng bên trái. Các menu sửa/xóa, nút gập/mở và thao tác chọn phòng của Chatwork được giữ lại. Danh mục và phòng giữ thứ tự dữ liệu server trong từng cấp, thư mục con nằm trước các phòng của cha; phòng đã có trong nhánh con được ẩn ở cha.
+Cây được hiển thị ngay trên **các danh mục có sẵn của Chatwork**, trong vùng danh sách phòng bên trái. Các menu sửa/xóa, nút gập/mở và thao tác chọn phòng của Chatwork được giữ lại. Danh mục giữ thứ tự dữ liệu server trong từng cấp. Trong từng folder, phòng ghim nằm trước, tiếp đến là phòng có thông báo/chưa đọc; cùng mức ưu tiên thì giữ thứ tự server. Thư mục con nằm trước các phòng của cha; phòng đã có trong nhánh con được ẩn ở cha. Các cuộc trò chuyện chưa phân loại nằm dưới cây folder, cuộn chung và dùng cùng thứ tự ưu tiên, không lặp lại phòng đã có trong folder. Có thể bật/tắt tại **Cài đặt → Danh sách trò chuyện → Gộp chat chưa phân loại dưới các folder**; lựa chọn được lưu riêng theo tài khoản trên thiết bị. Danh sách đợi thao tác cuộn kết thúc rồi mới sắp xếp lại.
 
 | Thao tác trong menu danh mục | Chức năng |
 |---|---|
@@ -98,7 +98,7 @@ Chatwork lưu danh mục và danh sách phòng. **Quan hệ cha–con do Toolkit
 
 Các icon **Info, Tiêu đề, Code, Đường kẻ, Xem trước** nằm trên thanh soạn tin. Chọn một đoạn văn bản trước khi bấm để bọc đoạn đó bằng thẻ Chatwork, hoặc đặt con trỏ để chèn mẫu trống.
 
-Khi mở popup **Chỉnh sửa mô tả**, cùng bộ icon xuất hiện **bên trong popup, trên ô nhập**. Thao tác định dạng áp dụng vào ô mô tả, giữ nguyên bản nháp chat bên dưới. Bấm nút lưu của Chatwork để cập nhật mô tả nhóm.
+Khi mở popup **Chỉnh sửa mô tả** hoặc ô **Mô tả** trong **Cài đặt Trò chuyện Nhóm**, cùng bộ icon xuất hiện **bên trong popup, trên ô nhập**. Thao tác định dạng áp dụng vào ô mô tả, giữ nguyên bản nháp chat bên dưới. Bấm nút lưu của Chatwork để cập nhật mô tả nhóm.
 
 Xem trước mô phỏng các thẻ Chatwork như Info, Title, Code, Quote, HR và TO. Markdown như `**bold**` được giữ dạng chữ theo bộ dựng hiện tại. Nút sao chép trên khối code giúp lấy nội dung mã mà không kèm nút giao diện.
 
@@ -282,7 +282,7 @@ Trên Mac:
 
 ```bash
 bash mac/test-native.sh
-node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.7-macOS-Universal/THK-Chat.app
+node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.8-macOS-Universal/THK-Chat.app
 ```
 
 Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu phiên bản, hai kiến trúc, toàn bộ script/CSS, updater và icon trong gói với mã nguồn.
@@ -298,7 +298,7 @@ Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu
 
 1. Đồng bộ phiên bản trong `Cargo.toml`, `Cargo.lock`, `mac/Info.plist`, giá trị mặc định của `installer.nsi` và phần giới thiệu README.
 2. Chạy kiểm thử, commit và push code.
-3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.7`.
+3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.8`.
 4. Kiểm tra Actions và các asset trên trang Releases.
 
 Updater sử dụng gói `THK-Chat-v<version>-Windows-x64.zip` hoặc `THK-Chat-v<version>-macOS-Universal.tar.gz`. Các file SHA256 được phát hành cùng bộ cài và archive.

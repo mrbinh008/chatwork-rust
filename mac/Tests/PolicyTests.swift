@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 @main
 struct PolicyTests {
@@ -20,6 +21,12 @@ struct PolicyTests {
         let encoded = WebPolicy.scriptValue(text)
         let decoded = try! JSONSerialization.jsonObject(with: Data(encoded.utf8), options: [.fragmentsAllowed]) as! String
         precondition(decoded == text)
-        print("Swift URL policy, version comparison and IPC escaping checks passed.")
+        let notificationIcon = URL(fileURLWithPath: "assets/AppIcon.icns")
+        guard let iconSource = CGImageSourceCreateWithURL(notificationIcon as CFURL, nil) else {
+            preconditionFailure("The macOS notification app icon must decode")
+        }
+        precondition(CGImageSourceGetCount(iconSource) > 0)
+        precondition(CGImageSourceCreateImageAtIndex(iconSource, 0, nil) != nil)
+        print("Swift URL policy, version comparison, IPC escaping and notification icon decoding checks passed.")
     }
 }

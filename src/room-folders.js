@@ -2,6 +2,54 @@
     'use strict';
     const managed = new Map();
     const containers = new Set();
+    const rootLists = new Map();
+    const rootHeadings = new Map();
+    const sharedScrollHosts = new Set(), sharedFlow = new Set(), sharedDividers = new Set(), sharedBranchOrder = new Map();
+    function folderAttr(element, name, value) {
+        const next = String(value); if (element.getAttribute(name) !== next) element.setAttribute(name, next);
+    }
+    function folderOrder(element, value) {
+        const next = String(value); if (element.style.order !== next) element.style.order = next;
+    }
+    function folderStyle(element, name, value) {
+        const next = String(value);
+        if ((element.style.getPropertyValue?.(name) ?? element.style[name]) !== next) element.style.setProperty(name, next);
+    }
+    function folderClass(element, name) { if (!element.classList.contains(name)) element.classList.add(name); }
+    let scrollHost = null, scrollingUntil = 0, scheduledFrame = false, scheduledTimer = null;
+    const isScrolling = () => Date.now() < scrollingUntil;
+    function noteSidebarScroll() { scrollingUntil = Date.now() + 180; }
+    function trackScrollHost(host) {
+        if (host === scrollHost) return;
+        scrollHost?.removeEventListener?.('scroll', noteSidebarScroll, true);
+        scrollHost?.removeEventListener?.('wheel', noteSidebarScroll);
+        scrollHost?.removeEventListener?.('touchmove', noteSidebarScroll);
+        scrollHost = host; scrollingUntil = 0;
+        host?.addEventListener('scroll', noteSidebarScroll, {capture:true, passive:true});
+        host?.addEventListener('wheel', noteSidebarScroll, {passive:true});
+        host?.addEventListener('touchmove', noteSidebarScroll, {passive:true});
+    }
+    function scheduleMount() {
+        if (scheduledFrame || scheduledTimer !== null) return;
+        if (isScrolling()) {
+            scheduledTimer = setTimeout(() => { scheduledTimer = null; scheduleMount(); }, Math.max(1, scrollingUntil - Date.now()));
+            return;
+        }
+        scheduledFrame = true;
+        const run = () => { scheduledFrame = false; if (isScrolling()) scheduleMount(); else mount(); };
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+        else if (typeof setTimeout === 'function') setTimeout(run, 16);
+        else run();
+    }
+    function isMergeEnabled() {
+        try { return JSON.parse(localStorage.getItem('thk-toolkit.nativeFolderMerge.' + (accountId() || 'default')) || 'true') !== false; }
+        catch (_) { return true; }
+    }
+    function setMergeEnabled(enabled) {
+        if (!accountId()) throw new Error(text('unavailable'));
+        localStorage.setItem('thk-toolkit.nativeFolderMerge.' + accountId(), JSON.stringify(!!enabled));
+        mount(); return !!enabled;
+    }
     const labels = {
         vi: {child:'+ Thư mục con', parent:'Thư mục cha', root:'[Thư mục gốc]', name:'Tên thư mục', rooms:'Chọn phòng', search:'Tìm phòng…', save:'Lưu', local:'Quan hệ thư mục cha/con được lưu trên thiết bị này.', failed:'Không lưu được thay đổi. Vui lòng thử lại.', unavailable:'Chưa đọc được chức năng danh mục của Chatwork.', stale:'Thư mục đã thay đổi. Hãy mở lại và chọn thư mục cha.'},
         en: {child:'+ Subfolder', parent:'Parent folder', root:'[Root folder]', name:'Folder name', rooms:'Select rooms', search:'Find rooms…', save:'Save', local:'Folder nesting is saved on this device.', failed:'Could not save changes. Please try again.', unavailable:'Chatwork category services are not available.', stale:'Folders have changed. Reopen and choose a parent.'},
@@ -274,7 +322,8 @@
         const labels = [...header.querySelectorAll('div, span')].filter(element => !element.closest('.thk-native-folder-tools'));
         return list.find(category => labels.some(label => label.textContent.trim() === category.name))?.id || '';
     }
-    // Keep React's DOM intact. CSS order follows the API within each branch,
+    // Keep React's DOM intact. Folder branches follow API order; room rows rank
+    // pinned and unread chats first, using API order to break ties,
     // with every child branch before the parent's own room list.
     function folderLayout(tree) {
         const result = [];
@@ -294,11 +343,16 @@
         return result;
     }
     function roomId(row) {
+        const direct = row.getAttribute('data-rid') || row.getAttribute('data-room-id');
+        if (direct) return direct;
+        const nativeId = (row.id || row.getAttribute('id') || '').match(/^(?:_?room(?:ListItem)?[-_]?)?(\d+)$/i);
+        if (nativeId) return nativeId[1];
+        const marked = row.querySelector('[data-rid], [data-room-id]');
+        const explicit = marked?.getAttribute('data-rid') || marked?.getAttribute('data-room-id');
+        if (explicit) return explicit;
         const link = row.matches('a[href]') ? row : row.querySelector('a[href*="rid"]');
         const match = link?.getAttribute('href')?.match(/(?:#!rid|[?&]rid=)(\d+)/);
-        const marked = row.matches('[data-rid], [data-room-id]') ? row : row.querySelector('[data-rid], [data-room-id]');
-        const explicit = marked?.getAttribute('data-rid') || marked?.getAttribute('data-room-id') || match?.[1];
-        if (explicit) return String(explicit);
+        if (match) return match[1];
         let fiber = row[Object.keys(row).find(key => key.startsWith('__reactFiber$'))];
         for (let depth = 0; fiber && depth < 8; depth++, fiber = fiber.return) {
             const props = fiber.memoizedProps;
@@ -307,12 +361,155 @@
         }
         return '';
     }
+    function roomScalar(input) {
+        for (let depth = 0; input && typeof input === 'object' && depth < 5; depth++) {
+            const next = input.getValue?.() ?? input.value;
+            if (next === undefined || next === input) break;
+            input = next;
+        }
+        return input;
+    }
+    function roomField(record, key) {
+        try { return roomScalar(typeof record?.[key] === 'function' ? record[key]() : record?.[key]); }
+        catch (_) { return undefined; }
+    }
+    function roomPriority(row, id, entities) {
+        const sources = [];
+        let fiber = row[Object.keys(row).find(key => key.startsWith('__reactFiber$'))];
+        for (let depth = 0; fiber && depth < 6; depth++, fiber = fiber.return) {
+            if (fiber.memoizedProps) sources.push(fiber.memoizedProps, fiber.memoizedProps.room);
+        }
+        sources.push(entities.get(id), window.RM?.room_dat?.[id]);
+        const isOn = input => input === true || input === 'true' || Number(input) > 0;
+        let pinned;
+        for (const key of ['data-pinned', 'data-sticky']) {
+            const flag = row.getAttribute(key);
+            if (flag !== null) { pinned = isOn(flag); break; }
+        }
+        if (pinned === undefined) for (const source of sources) {
+            const flags = ['isPinned','isSticky','isPin','pinned','sticky','pin'].map(key => roomField(source, key));
+            const flag = flags.find(flag => ['boolean','number','string'].includes(typeof flag));
+            if (flag !== undefined) { pinned = isOn(flag); break; }
+        }
+        if (pinned === undefined) {
+            pinned = row.matches('.roomListItem--sticky, .roomListItem--pinned');
+            for (const control of row.querySelectorAll('[aria-label], [title]')) {
+                const label = ((control.getAttribute('aria-label') || '') + ' ' + (control.getAttribute('title') || '')).normalize('NFC');
+                if (/unpin|bỏ ghim|ピン.*解除|固定.*解除/i.test(label)
+                    || /pin|ghim|ピン|固定/i.test(label) && control.getAttribute('aria-pressed') === 'true') pinned = true;
+            }
+        }
+        let unread;
+        for (const source of sources) {
+            const counts = ['unreadNumber','unreadMessageCount','unreadCount','unread_num','mentionCount','mentionNumber','mention_num','hasUnread','hasMention']
+                .map(key => roomField(source, key));
+            const info = roomScalar(source?.messageCountInfo);
+            counts.push(roomField(info, 'unreadMessageCount'), roomField(info, 'mentionMessageCount'));
+            if (counts.some(count => ['boolean','number','string'].includes(typeof count))) { unread = counts.some(isOn); break; }
+        }
+        const visible = element => !element.hidden && element.style.display !== 'none' && !element.closest('[hidden], [aria-hidden="true"]');
+        const badges = unread === undefined ? row.querySelectorAll('.unread, .roomBadge, ._unreadBadge, [data-unread-count], [data-mention-count], [data-testid*="unread"], [data-testid*="badge"], ul > li') : [];
+        if ([...badges].some(badge => visible(badge) && (parseInt(badge.getAttribute('data-unread-count') ?? badge.getAttribute('data-mention-count') ?? badge.textContent, 10) > 0
+            || !badge.textContent.trim() && /unread/i.test(badge.getAttribute('data-testid') || '')))) unread = true;
+        return {pinned:!!pinned, unread:!!unread};
+    }
+    function nativeRoomMap() {
+        const repository = window.CW?.application?.domainServiceContext?.roomService?.roomRepository;
+        const entries = new Map(Object.entries(repository?.entities || {}));
+        for (const room of repository?.getAll?.() || []) {
+            const id = roomScalar(room.identity ?? room.id);
+            if (id !== undefined) entries.set(String(id), room);
+        }
+        return entries;
+    }
+    function layoutRoomRows(state, roomOrder, hiddenIds, entities) {
+        const order = new Map(roomOrder.map((id, index) => [id, index]));
+        const rows = new Set(state.rooms.children);
+        for (const [row, originalOrder] of state.rows) if (!rows.has(row)) {
+            row.removeAttribute('data-thk-folder-room-hidden'); row.style.order = originalOrder; state.rows.delete(row);
+        }
+        const ranked = [...rows].map((row, index) => {
+            const id = roomId(row);
+            return {row, id, index, apiOrder:order.get(id) ?? order.size, ...roomPriority(row, id, entities)};
+        }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(b.unread) - Number(a.unread)
+            || a.apiOrder - b.apiOrder || a.index - b.index);
+        ranked.forEach(({row, id}, index) => {
+            if (!state.rows.has(row)) state.rows.set(row, row.style.order || '');
+            folderOrder(row, index);
+            folderAttr(row, 'data-thk-folder-room-hidden', hiddenIds.has(id));
+        });
+    }
+    function isUnclassifiedHeading(element) {
+        const label = (element?.textContent || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd');
+        return /chua.*phan loai|uncategori[sz]ed|unclassified|未分類/i.test(label);
+    }
+    function mountRootRooms(host, list, layout, entities) {
+        const categorized = new Set(list.flatMap(folder => folder.rooms));
+        const categoryLists = new Set([...managed.values()].map(state => state.rooms));
+        const active = new Set(), headings = new Set();
+        const rootOrder = layout.length * 2;
+        for (const rooms of host?.querySelectorAll('ul') || []) {
+            if (categoryLists.has(rooms) || rooms.parentElement?.closest('ul')
+                || rooms.previousElementSibling?.matches('[role="button"][aria-expanded]')
+                || ![...rooms.children].some(row => roomId(row)) && !isUnclassifiedHeading(rooms.previousElementSibling)) continue;
+            active.add(rooms);
+            let state = rootLists.get(rooms);
+            if (!state) {
+                state = {rooms, roomsOrder:rooms.style.order || '', rows:new Map()}; rootLists.set(rooms, state);
+            }
+            folderClass(rooms, 'thk-native-root-rooms'); folderOrder(rooms, rootOrder + active.size + 1);
+            layoutRoomRows(state, [...rooms.children].map(roomId), categorized, entities);
+            // The native unclassified heading/separator share the folder flex flow.
+            for (let heading = rooms.previousElementSibling; heading; heading = heading.previousElementSibling) {
+                if (!isUnclassifiedHeading(heading) && heading.getAttribute('role') !== 'separator') break;
+                headings.add(heading);
+                if (!rootHeadings.has(heading)) rootHeadings.set(heading, heading.style.order || '');
+                folderOrder(heading, rootOrder);
+            }
+        }
+        for (const [rooms, state] of rootLists) if (!active.has(rooms)) {
+            clearRooms(state); rootLists.delete(rooms);
+        }
+        for (const [heading, originalOrder] of rootHeadings) if (!headings.has(heading)) {
+            heading.style.order = originalOrder; rootHeadings.delete(heading);
+        }
+    }
+    function mountSharedRoomScroll(host, layout) {
+        const scrollHosts = new Set(), flow = new Set(), dividers = new Set(), ordered = new Set();
+        const headers = [...managed.keys()], roots = [...rootLists.keys()];
+        let common = headers[0]?.parentElement;
+        while (common && !roots.every(rooms => common.contains(rooms))) common = common.parentElement;
+        if (host && headers.length && roots.length && common && host.contains(common)) {
+            scrollHosts.add(common);
+            const areas = [...headers.map(header => ({element:header, order:0})), ...roots.map((rooms,index) => ({element:rooms, order:layout.length * 2 + index + 1}))];
+            for (const {element, order} of areas) {
+                let branch = element;
+                for (let parent = element.parentElement; parent && parent !== common; parent = parent.parentElement) {
+                    flow.add(parent); branch = parent;
+                }
+                if (branch !== element) {
+                    ordered.add(branch);
+                    if (!sharedBranchOrder.has(branch)) sharedBranchOrder.set(branch, branch.style.order || '');
+                    folderOrder(branch, order);
+                }
+            }
+            common.querySelectorAll('[role="separator"]').forEach(divider => dividers.add(divider));
+        }
+        for (const [current, next, className] of [[sharedScrollHosts,scrollHosts,'thk-native-unified-room-scroll'],[sharedFlow,flow,'thk-native-room-flow'],[sharedDividers,dividers,'thk-native-room-divider']]) {
+            for (const element of current) if (!next.has(element)) { element.classList.remove(className); current.delete(element); }
+            for (const element of next) if (!current.has(element)) { element.classList.add(className); current.add(element); }
+        }
+        for (const [branch, originalOrder] of sharedBranchOrder) if (!ordered.has(branch)) {
+            branch.style.order = originalOrder; sharedBranchOrder.delete(branch);
+        }
+    }
     function clearRooms(state) {
         for (const [row, order] of state.rows) {
             row.removeAttribute('data-thk-folder-room-hidden'); row.style.order = order;
         }
         state.rows.clear();
         if (state.rooms) {
+            state.rooms.classList.remove('thk-native-root-rooms');
             state.rooms.classList.remove('thk-native-folder-rooms'); state.rooms.removeAttribute('data-thk-folder-hidden');
             state.rooms.style.removeProperty('--thk-folder-depth'); state.rooms.style.order = state.roomsOrder;
         }
@@ -357,8 +554,9 @@
             document.querySelectorAll('.' + className).forEach(element => element.classList.remove(className));
         }
         const host = document.querySelector('#_roomListArea.roomListWithSwitch, #roomListWithSwitch, .roomListWithSwitch, [class*="roomListWithSwitch"]');
+        trackScrollHost(host);
         const list = categories(), layout = folderLayout(buildTree(list, readParents()));
-        const native = new Map();
+        const native = new Map(), roomEntities = nativeRoomMap();
         host?.querySelectorAll('[role="button"][aria-expanded]').forEach(header => {
             if (header.parentElement?.closest('[role="button"][aria-expanded]')) return;
             const id = headerCategoryId(header, list); if (id) native.set(id, header);
@@ -393,34 +591,28 @@
                 control.disabled = position === 0 && (!services().api?.add || !services().filters?.refreshCategory);
             });
             const hidden = folder.ancestors.some(id => native.get(id)?.getAttribute('aria-expanded') === 'false');
-            header.classList.add('thk-native-folder-heading'); header.setAttribute('data-thk-native-folder-id', folder.id);
-            header.setAttribute('data-thk-folder-hidden', String(hidden)); header.style.setProperty('--thk-folder-depth', String(folder.depth));
-            header.style.order = String(folder.headerOrder);
+            folderClass(header, 'thk-native-folder-heading'); folderAttr(header, 'data-thk-native-folder-id', folder.id);
+            folderAttr(header, 'data-thk-folder-hidden', hidden); folderStyle(header, '--thk-folder-depth', folder.depth);
+            folderOrder(header, folder.headerOrder);
             const rooms = header.nextElementSibling?.tagName === 'UL' ? header.nextElementSibling : null;
+            if (rootLists.has(rooms)) { clearRooms(rootLists.get(rooms)); rootLists.delete(rooms); }
             if (state.rooms !== rooms) {
                 clearRooms(state); state.rooms = rooms; state.roomsOrder = rooms?.style.order || '';
             }
             if (rooms) {
-                rooms.classList.add('thk-native-folder-rooms'); rooms.setAttribute('data-thk-folder-hidden', String(hidden || header.getAttribute('aria-expanded') === 'false'));
-                rooms.style.setProperty('--thk-folder-depth', String(folder.depth)); rooms.style.order = String(folder.roomsOrder);
-                const order = new Map(folder.rooms.map((id, index) => [id, index]));
-                const rows = new Set(rooms.children);
-                for (const [row, originalOrder] of state.rows) if (!rows.has(row)) {
-                    row.removeAttribute('data-thk-folder-room-hidden'); row.style.order = originalOrder; state.rows.delete(row);
-                }
-                for (const row of rows) {
-                    if (!state.rows.has(row)) state.rows.set(row, row.style.order || '');
-                    const id = roomId(row);
-                    row.style.order = String(order.get(id) ?? order.size);
-                    row.setAttribute('data-thk-folder-room-hidden', String(folder.descendantRooms.has(id)));
-                }
+                folderClass(rooms, 'thk-native-folder-rooms'); folderAttr(rooms, 'data-thk-folder-hidden', hidden || header.getAttribute('aria-expanded') === 'false');
+                folderStyle(rooms, '--thk-folder-depth', folder.depth); folderOrder(rooms, folder.roomsOrder);
+                layoutRoomRows(state, folder.rooms, folder.descendantRooms, roomEntities);
             }
         }
         for (const [header, state] of managed) if (!active.has(header)) { clearState(header, state); managed.delete(header); }
         for (const container of containers) if (!activeContainers.has(container)) { container.classList.remove('thk-native-folder-list'); containers.delete(container); }
-        for (const container of activeContainers) { container.classList.add('thk-native-folder-list'); containers.add(container); }
+        for (const container of activeContainers) { folderClass(container, 'thk-native-folder-list'); containers.add(container); }
+        const merge = isMergeEnabled();
+        mountRootRooms(merge ? host : null, list, layout, roomEntities);
+        mountSharedRoomScroll(merge ? host : null, layout);
         mountCategoryMenu();
     }
-    window.__thkRoomFolders = {mount, getTree, openEditor, reparent, saveCategory, buildTree, exportTree, previewImport, importTree};
+    window.__thkRoomFolders = {mount, scheduleMount, isScrolling, isMergeEnabled, setMergeEnabled, getTree, openEditor, reparent, saveCategory, buildTree, exportTree, previewImport, importTree};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })();

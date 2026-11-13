@@ -20,6 +20,8 @@ const plist=text(path.join(bundle,'Contents/Info.plist'));
 const field=key=>plist.match(new RegExp('<key>'+key+'</key>\\s*<string>([^<]+)</string>'))?.[1];
 const version=text(path.join(root,'Cargo.toml')).match(/^version\s*=\s*"([^"]+)"/m)[1];
 assert.equal(field('CFBundleIdentifier'),'com.thk.chat');
+assert.equal(field('CFBundleIconFile'),'AppIcon.icns','macOS notifications resolve the bundled app icon');
+assert.deepEqual(fs.readFileSync(path.join(bundle,'Contents/Resources/AppIcon.icns')),fs.readFileSync(path.join(root,'assets/AppIcon.icns')),'The published app contains the current notification logo');
 assert.equal(field('CFBundleExecutable'),'chatwork');
 assert.equal(field('CFBundleShortVersionString'),version);
 assert.equal(field('CFBundleVersion'),version);

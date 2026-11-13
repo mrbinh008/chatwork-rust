@@ -250,6 +250,21 @@
         }, true);
     }
 
+    function folderListSettings(view) {
+        const api = window.__thkRoomFolders;
+        view.body.appendChild(element('h3', 'thk-sec-title', t('chatList')));
+        const label = element('label', 'thk-toolkit-check');
+        const merge = element('input'); merge.type = 'checkbox'; merge.id = 'thkMergeUnclassifiedChats';
+        merge.disabled = typeof api?.isMergeEnabled !== 'function' || typeof api?.setMergeEnabled !== 'function';
+        merge.checked = merge.disabled ? true : api.isMergeEnabled();
+        label.append(merge, element('span', '', t('mergeUnclassified')));
+        const status = element('p', 'thk-leave-hint'); status.setAttribute('role', 'status');
+        merge.addEventListener('change', () => {
+            try { api.setMergeEnabled(merge.checked); status.textContent = settingMessages[getLanguage()].saved; }
+            catch (_) { merge.checked = api.isMergeEnabled(); status.textContent = settingMessages[getLanguage()].failed; }
+        });
+        view.body.append(label, element('p', 'thk-leave-hint', t('mergeUnclassifiedHint')), status);
+    }
     function folderTransferSettings(view) {
         const folderAPI = window.__thkRoomFolders;
         const section = element('section', 'thk-folder-transfer');
@@ -444,6 +459,7 @@
         scope.addEventListener('change', drawShortcuts);
         drawShortcuts();
 
+        folderListSettings(view);
         folderTransferSettings(view);
         view.body.appendChild(element('h3','thk-sec-title','THK-Chat v__VERSION__'));
         view.body.appendChild(button(t('updates'), () => { view.close(); window.__thk_openUpdates?.(); }, 'thk-btn-secondary'));
@@ -477,6 +493,9 @@
     Object.assign(translations.vi, {folderSync:'Đồng bộ cây thư mục',folderSyncHint:'Xuất file JSON rồi nhập trên thiết bị khác cùng tài khoản Chatwork. Các thư mục ngoài file được giữ lại; phòng trong danh mục tiếp tục đồng bộ qua Chatwork.',folderExport:'Export cây thư mục',folderImport:'Import cây thư mục',folderApply:'Áp dụng cây thư mục',folderExported:'Đã tạo file cây thư mục.',folderImported:'Đã nhập cây thư mục.',folderImportPreview:'{count} danh mục · {changes} thay đổi · {skipped} bỏ qua vì danh mục chưa có.',folderImportFailed:'Không thể nhập/xuất cây thư mục. Vui lòng thử lại.',folderFileLarge:'File quá lớn. Vui lòng chọn file JSON dưới 1 MB.',folderReading:'Đang đọc file…',folderUnchanged:'Cây thư mục đã trùng khớp.'});
     Object.assign(translations.en, {folderSync:'Sync folder tree',folderSyncHint:'Export JSON and import it on another device using the same Chatwork account. Folders outside the file are kept; category rooms continue to sync through Chatwork.',folderExport:'Export folder tree',folderImport:'Import folder tree',folderApply:'Apply folder tree',folderExported:'Folder tree file created.',folderImported:'Folder tree imported.',folderImportPreview:'{count} categories · {changes} changes · {skipped} skipped because categories are unavailable.',folderImportFailed:'Could not import/export the folder tree. Please try again.',folderFileLarge:'File is too large. Select a JSON file smaller than 1 MB.',folderReading:'Reading file…',folderUnchanged:'The folder tree already matches.'});
     Object.assign(translations.ja, {folderSync:'フォルダツリーの同期',folderSyncHint:'同じChatworkアカウントの別の端末にJSONをエクスポート・インポートできます。ファイルにないフォルダは維持され、ルームはChatworkで同期されます。',folderExport:'ツリーをエクスポート',folderImport:'ツリーをインポート',folderApply:'ツリーを適用',folderExported:'ファイルを作成しました。',folderImported:'ツリーをインポートしました。',folderImportPreview:'{count}件 · {changes}件の変更 · 利用できない{skipped}件をスキップ',folderImportFailed:'ツリーのインポート・エクスポートに失敗しました。',folderFileLarge:'1 MB未満のJSONファイルを選択してください。',folderReading:'読み込み中…',folderUnchanged:'ツリーは既に一致しています。'});
+    Object.assign(translations.vi, {chatList:'Danh sách trò chuyện',mergeUnclassified:'Gộp chat chưa phân loại dưới các folder',mergeUnclassifiedHint:'Bật để dùng chung vùng cuộn với cây folder. Tắt để hiển thị phần chưa phân loại riêng. Lựa chọn được lưu trên thiết bị này.'});
+    Object.assign(translations.en, {chatList:'Chat list',mergeUnclassified:'Merge uncategorized chats below folders',mergeUnclassifiedHint:'Use one scroll area with the folder tree. Turn off to show uncategorized chats separately. Saved on this device.'});
+    Object.assign(translations.ja, {chatList:'チャット一覧',mergeUnclassified:'未分類のチャットをフォルダの下にまとめる',mergeUnclassifiedHint:'フォルダと同じスクロール領域を使います。オフにすると未分類のチャットを別に表示します。この端末に保存されます。'});
     const labels = {
         '2. Ngày và thời gian nghỉ': ['2. Leave dates and times','2. 休暇の日付と時間'],
         'Mỗi dòng là một ngày kèm khoảng giờ nghỉ riêng.': ['Each row has its own date and time range.','各行で日付と休暇時間を個別に指定します。'],
@@ -652,8 +671,21 @@
     }
 
     function getRoomTree() { return window.__thkRoomFolders?.getTree() || []; }
-    function mountRoomTree() { window.__thkRoomFolders?.mount(); }
+    function mountRoomTree() {
+        const api = window.__thkRoomFolders;
+        if (api?.scheduleMount) api.scheduleMount(); else api?.mount();
+    }
 
+    let toolbarSyncTimer = null;
+    function scheduleToolbarSync() {
+        if (toolbarSyncTimer !== null) return;
+        if (typeof setTimeout !== 'function') { syncToolbar(); return; }
+        toolbarSyncTimer = setTimeout(() => {
+            toolbarSyncTimer = null;
+            if (window.__thkRoomFolders?.isScrolling?.()) { scheduleToolbarSync(); return; }
+            syncToolbar();
+        }, 80);
+    }
     function syncToolbar() {
         syncCoreTheme();
         localize();
@@ -729,13 +761,13 @@
         }
         if (document.documentElement?.classList?.remove) document.documentElement.classList.remove('thk-compact');
         syncToolbar();
-        const observer = typeof MutationObserver === 'function' ? new MutationObserver(() => syncToolbar()) : null;
-        if (observer) observer.observe(document.body, {childList:true,subtree:true});
+        const observer = typeof MutationObserver === 'function' ? new MutationObserver(scheduleToolbarSync) : null;
+        if (observer) observer.observe(document.body, {childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-pinned','data-sticky','data-unread-count','data-mention-count','aria-pressed']});
         if (typeof window.addEventListener === 'function') {
             window.addEventListener('hashchange', () => { closePanel?.(); syncToolbar(); });
             window.addEventListener('storage', event => { if (event.key?.startsWith('thk-toolkit.toolbar')) syncToolbar(); });
         }
-        if (typeof setInterval === 'function') setInterval(syncToolbar, 1500);
+        if (typeof setInterval === 'function') setInterval(scheduleToolbarSync, 1500);
     }
     window.__thkToolkit = {
         getRoom,

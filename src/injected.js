@@ -1625,11 +1625,47 @@
     }
 
     const descriptionToolbars = new Map();
+    const descriptionFieldLayouts = new Map(), descriptionFieldHosts = new Map();
+    function restoreDescriptionField(editor, original) {
+        for (const [property, saved] of original) {
+            if (saved.value) editor.style.setProperty(property, saved.value, saved.priority);
+            else editor.style.removeProperty(property);
+        }
+    }
+    function layoutDescriptionField(toolbar, editor) {
+        let original = descriptionFieldLayouts.get(editor);
+        if (!original) {
+            original = new Map(['height','padding-top','box-sizing'].map(property => [property,
+                {value:editor.style.getPropertyValue(property), priority:editor.style.getPropertyPriority(property)}]));
+            descriptionFieldLayouts.set(editor, original);
+        }
+        // Measure the native field without accumulating padding on observer passes.
+        restoreDescriptionField(editor, original);
+        const parent = editor.parentElement;
+        if (getComputedStyle(parent).position === 'static') {
+            if (!descriptionFieldHosts.has(parent)) descriptionFieldHosts.set(parent,
+                {value:parent.style.getPropertyValue('position'), priority:parent.style.getPropertyPriority('position')});
+            parent.style.setProperty('position', 'relative');
+        }
+        const bounds = editor.getBoundingClientRect(), parentBounds = parent.getBoundingClientRect();
+        const computed = getComputedStyle(editor);
+        toolbar.classList.add('thk-description-field-toolbar');
+        toolbar.style.left = (bounds.left - parentBounds.left + parent.scrollLeft - parent.clientLeft) + 'px';
+        toolbar.style.top = (bounds.top - parentBounds.top + parent.scrollTop - parent.clientTop) + 'px';
+        toolbar.style.width = bounds.width + 'px';
+        const toolbarHeight = toolbar.getBoundingClientRect().height;
+        // The toolbar occupies the top of the existing textarea instead of adding
+        // a new row to Chatwork's fixed-height group settings form.
+        if (computed.boxSizing !== 'border-box') editor.style.setProperty('height', bounds.height + 'px', 'important');
+        editor.style.setProperty('box-sizing', 'border-box', 'important');
+        editor.style.setProperty('padding-top', ((parseFloat(computed.paddingTop) || 0) + toolbarHeight) + 'px', 'important');
+    }
     const descriptionPopupTitles = '.sc-iHmpnF.eiYmEZ, [class*="modal"][class*="title"], [class*="modal"][class*="Title"], [class*="dialog"][class*="title"], [class*="dialog"][class*="Title"], [role="heading"], h1, h2, h3';
     function getRoomDescriptionEditor(header) {
-        const available = editor => editor && editor !== getChatText() && !editor.disabled && !editor.readOnly && !editor.hidden
+        const available = editor => editor && document.body.contains(editor) && editor !== getChatText() && !editor.disabled && !editor.readOnly && !editor.hidden
             && !editor.closest('#thk-modal-backdrop, #thk-preview-modal-backdrop, #thk-toolkit-panel, [hidden], [aria-hidden="true"]')
             && editor.getClientRects().length > 0;
+        if (header.tagName === 'TEXTAREA') return available(header) ? header : null;
         // Find the editor in the same popup as its title, including portal dialogs
         // whose generated classes do not expose a dialog role.
         for (let scope = header.parentElement; scope && scope !== document.body; scope = scope.parentElement) {
@@ -1640,6 +1676,28 @@
         return null;
     }
 
+    function descriptionText(input) {
+        return String(input || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').normalize('NFC').trim().toLowerCase();
+    }
+    function isGroupDescriptionField(editor) {
+        const popup = editor.closest('[role="dialog"], [aria-modal="true"], #RootModalsEntryPoint, #ModalDialogs');
+        if (!popup) return false;
+        const settingsTitle = /group.*(?:chat|settings)|(?:chat|settings).*group|cai dat.*(?:tro chuyen|nhom)|グループ.*設定|チャット.*設定/;
+        if (!settingsTitle.test(descriptionText(popup.getAttribute('aria-label')))
+            && ![...popup.querySelectorAll(descriptionPopupTitles)].some(title => title.getClientRects().length > 0 && settingsTitle.test(descriptionText(title.textContent)))) return false;
+        const isCaption = input => /^(?:(?:group\s+)?description|mo ta(?: nhom)?|概要|説明)\s*[:：]?$/.test(descriptionText(input));
+        if (isCaption(editor.getAttribute('aria-label'))) return true;
+        const labelled = (editor.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+        if (labelled.some(id => isCaption(document.getElementById(id)?.textContent))) return true;
+        if (editor.id && [...popup.querySelectorAll('label[for]')].some(label => label.getAttribute('for') === editor.id && isCaption(label.textContent))) return true;
+        // Some native settings forms expose a caption next to an unlabelled textarea.
+        for (let scope = editor.parentElement; scope && popup.contains(scope); scope = scope.parentElement) {
+            if (scope.querySelectorAll('textarea').length > 1) break;
+            if ([...scope.querySelectorAll('label, legend, dt, span, p, div')].some(label => !label.contains(editor) && isCaption(label.textContent))) return true;
+            if (scope === popup) break;
+        }
+        return false;
+    }
     function setupDescriptionToolbar() {
         const language = window.__thkToolkit?.getLanguage() || (navigator.language || 'en').slice(0, 2);
         const labels = {
@@ -1648,9 +1706,10 @@
             ja: ['グループ概要の書式', 'Info', 'タイトル', 'Code', '区切り線', 'プレビュー']
         }[language] || ['Group description formatting', 'Info', 'Title', 'Code', 'Divider', 'Preview'];
         const activeTitles = new Set();
-        const activeEditors = new Set();
-        document.querySelectorAll(descriptionPopupTitles).forEach(header => {
-            if (!/description|mô tả|概要|説明/i.test(header.textContent || '')) return;
+        const activeEditors = new Set(), activeFields = new Set();
+        const titles = [...document.querySelectorAll(descriptionPopupTitles)].filter(header => /description|mo ta|概要|説明/.test(descriptionText(header.textContent)));
+        const fields = [...document.querySelectorAll('textarea')].filter(isGroupDescriptionField);
+        [...titles, ...fields].forEach(header => {
             const editor = getRoomDescriptionEditor(header);
             if (!editor || activeEditors.has(editor)) return;
             activeEditors.add(editor); activeTitles.add(header);
@@ -1681,12 +1740,24 @@
                 if (control.title !== labels[index + 1]) control.title = labels[index + 1];
                 if (control.getAttribute('aria-label') !== labels[index + 1]) control.setAttribute('aria-label', labels[index + 1]);
             });
-            let anchor = header;
-            while (anchor.parentElement && !anchor.parentElement.contains(editor)) anchor = anchor.parentElement;
-            if (toolbar.parentElement !== anchor.parentElement || anchor.nextElementSibling !== toolbar) anchor.after(toolbar);
+            if (header === editor) {
+                if (toolbar.parentElement !== editor.parentElement || toolbar.nextElementSibling !== editor) editor.before(toolbar);
+                activeFields.add(editor); layoutDescriptionField(toolbar, editor);
+            } else {
+                let anchor = header;
+                while (anchor.parentElement && !anchor.parentElement.contains(editor)) anchor = anchor.parentElement;
+                if (toolbar.parentElement !== anchor.parentElement || anchor.nextElementSibling !== toolbar) anchor.after(toolbar);
+            }
         });
         for (const [header, toolbar] of descriptionToolbars) {
             if (!activeTitles.has(header)) { toolbar.remove(); descriptionToolbars.delete(header); }
+        }
+        for (const [editor, original] of descriptionFieldLayouts) if (!activeFields.has(editor)) {
+            restoreDescriptionField(editor, original); descriptionFieldLayouts.delete(editor);
+        }
+        for (const [host, original] of descriptionFieldHosts) if (![...activeFields].some(editor => editor.parentElement === host)) {
+            if (original.value) host.style.setProperty('position', original.value, original.priority); else host.style.removeProperty('position');
+            descriptionFieldHosts.delete(host);
         }
     }
 
@@ -2415,31 +2486,24 @@
 
     // ── 17. Periodic & Mutation Check to bind dynamic elements ───────────────
     function initDynamicWatchers() {
-        injectThkStyles();
-        setupQuickToolbar();
-        setupDescriptionToolbar();
-        attachCodeCopyButtons();
-
-        const observer = new MutationObserver(function() {
-            injectThkStyles();
-            setupQuickToolbar();
-            setupDescriptionToolbar();
-            attachCodeCopyButtons();
-        });
-
-        observer.observe(document.body || document.documentElement, {
-            childList: true,
-            subtree: true
-        });
-
-        setInterval(function() {
-            injectThkStyles();
-            setupQuickToolbar();
-            setupDescriptionToolbar();
-            attachCodeCopyButtons();
-        }, 1000);
+        const update = () => {
+            injectThkStyles(); setupQuickToolbar(); setupDescriptionToolbar(); attachCodeCopyButtons();
+        };
+        let pending = null;
+        const schedule = () => {
+            if (pending !== null) return;
+            pending = setTimeout(() => {
+                pending = null;
+                if (window.__thkRoomFolders?.isScrolling?.()) { schedule(); return; }
+                update();
+            }, 80);
+        };
+        update();
+        const observer = new MutationObserver(schedule);
+        observer.observe(document.body || document.documentElement, {childList:true, subtree:true});
+        window.addEventListener?.('resize', schedule);
+        setInterval(schedule, 1000);
     }
-
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initDynamicWatchers);
     } else {

@@ -8,6 +8,11 @@
   display:flex; align-items:center; flex-wrap:wrap; flex:0 0 auto; gap:3px;
   box-sizing:border-box; width:100%; padding:4px 0; margin:0 0 8px;
 }
+.thk-description-toolbar.thk-description-field-toolbar {
+  position:absolute; z-index:1; flex-wrap:nowrap; min-width:0; max-width:100%;
+  margin:0; padding:2px 4px; overflow-x:auto; overflow-y:hidden;
+  border:1px solid var(--thk-border); border-radius:3px 3px 0 0; background:var(--thk-surface);
+}
 #thk-toolbar-inline {
   display:inline-flex!important; align-items:center!important; flex:0 0 auto!important;
   gap:3px!important; height:32px!important; margin:0 0 0 6px!important;
@@ -241,7 +246,7 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 .thk-native-folder-option { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--thk-muted); cursor:pointer; font:600 14px/1 system-ui; }
 .thk-native-folder-option:hover { color:var(--thk-accent); background:var(--thk-tint); }
 .thk-native-folder-option:focus-visible { outline:2px solid var(--thk-accent); outline-offset:2px; }
-.thk-native-folder-rooms { display:flex!important; flex-direction:column; flex:0 0 auto; box-sizing:border-box; padding-left:calc(var(--thk-folder-depth,0) * 14px)!important; }
+.thk-native-folder-rooms, .thk-native-root-rooms { display:flex!important; flex-direction:column; flex:0 0 auto; box-sizing:border-box; padding-left:calc(var(--thk-folder-depth,0) * 14px)!important; }
 [data-thk-folder-hidden="true"], [data-thk-folder-room-hidden="true"] { display:none!important; }
 .thk-native-folder-room-choices { max-height:280px; overflow:auto; margin:8px 0; }
 #thk-toolkit-panel .thk-folder-directory-controls { display:flex; align-items:center; gap:8px; }
@@ -257,3 +262,8 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 
 .thk-folder-transfer { margin-top:20px; padding-top:4px; border-top:1px solid var(--thk-border); }
 .thk-folder-transfer-actions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+
+/* One scroll flow for category branches and uncategorized conversations. */
+.thk-native-unified-room-scroll { display:flex!important; flex-direction:column!important; min-height:0!important; overflow-y:auto!important; overflow-x:hidden!important; }
+.thk-native-room-flow { position:static!important; inset:auto!important; width:100%!important; height:auto!important; max-height:none!important; min-height:0!important; overflow:visible!important; flex:0 0 auto!important; }
+.thk-native-room-divider { display:none!important; }

@@ -108,18 +108,19 @@ const leave=new UINode('button');leave.id='thkBtnLeaveRequest';toolbar.append(le
 const editor=new UINode('textarea');editor.id='_chatText';editor.value='Hello ';editor.setSelectionRange(6,6);
 uiDocument.body.append(toolbar,editor);editor.focus();
 const uiStore=new Map();
-let transferBlob, transferDownloads=[], transferImports=[];
+let transferBlob, transferDownloads=[], transferImports=[], mergeEnabled=true, mergeSettingsError=false, mergeChanges=[], roomMounts=0, sidebarScrolling=false, uiObserver;
+const uiTimers=[];
 const transferSnapshot={format:'thk-chat.folder-tree',version:1,accountId:'7',folders:[{id:'a',parentId:''}]};
 const uiWindow={...window,addEventListener(){},removeEventListener(){},
     __thk_startDownload:(url,filename)=>transferDownloads.push({url,filename}),
-    __thkRoomFolders:{mount(){},getTree:()=>[],exportTree:()=>transferSnapshot,
+    __thkRoomFolders:{mount(){roomMounts++;},isScrolling:()=>sidebarScrolling,isMergeEnabled:()=>mergeEnabled,setMergeEnabled(enabled){if(mergeSettingsError)throw new Error(`Storage full`);mergeEnabled=enabled;mergeChanges.push(enabled);},getTree:()=>[],exportTree:()=>transferSnapshot,
         previewImport:()=>({count:1,changes:1,skipped:0}),importTree:data=>{transferImports.push(data);return {count:1,changes:1,skipped:0};}}
 };
 class TransferURL extends URL {
     static createObjectURL(blob){transferBlob=blob;return 'blob:folder-tree';}
     static revokeObjectURL(){}
 }
-const uiContext=vm.createContext({window:uiWindow,document:uiDocument,navigator:{language:'vi'},localStorage:{getItem:key=>uiStore.get(key)??null,setItem:(key,value)=>uiStore.set(key,value)},Intl,URL:TransferURL,Blob,Event:UIEvent,NodeFilter:{SHOW_TEXT:4},MutationObserver:class{observe(){}},setInterval(){},setTimeout(){},console});
+const uiContext=vm.createContext({window:uiWindow,document:uiDocument,navigator:{language:'vi'},localStorage:{getItem:key=>uiStore.get(key)??null,setItem:(key,value)=>uiStore.set(key,value)},Intl,URL:TransferURL,Blob,Event:UIEvent,NodeFilter:{SHOW_TEXT:4},MutationObserver:class{constructor(callback){uiObserver=callback;}observe(){}},setInterval(){},setTimeout(callback,delay){uiTimers.push({callback,delay});return uiTimers.length;},console});
 vm.runInContext(source,uiContext);uiDocument.listeners.DOMContentLoaded.forEach(fn=>fn());
 assert.equal(toolbar.children.length,4,'All three Toolkit actions share existing toolbar');
 assert.equal(leave.hidden,false,'Leave button appears in attendance room');
@@ -137,7 +138,7 @@ assert.equal(scopeSelect.value, 'room', 'Default scope is current group');
 const firstShortcut=dialog.querySelector('input');firstShortcut.checked=false;firstShortcut.dispatchEvent(new UIEvent('change'));
 assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar.room.7')).info,false);
 assert.equal(uiStore.has('thk-toolkit.toolbar'),false,'Changing group settings never writes a global configuration');
-assert.equal(dialog.querySelectorAll('input').filter(input=>input.type!=='file').length,8);
+assert.equal(dialog.querySelector('.thk-shortcut-grid').querySelectorAll('input').length,8);
 assert.equal(dialog.querySelectorAll('input').filter(input=>input.type==='file').length,1,'Settings include a folder tree import control');
 assert.equal(uiDocument.getElementById('thkToolkit-emoji'),null);
 assert.equal(uiWindow.__thkToolkit.toolbarPreferences('7').info,false);
@@ -146,6 +147,17 @@ scopeSelect.value = 'all'; scopeSelect.dispatchEvent(new UIEvent('change'));
 const allShortcut = dialog.querySelector('input'); allShortcut.checked = false; allShortcut.dispatchEvent(new UIEvent('change'));
 assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar')).info, false, 'Changing all-groups settings writes global configuration');
 assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,false,'Global settings now apply to other groups');
+const mergeToggle=dialog.querySelector('#thkMergeUnclassifiedChats');assert.equal(mergeToggle.checked,true);assert.equal(mergeToggle.disabled,false);
+mergeToggle.checked=false;mergeToggle.dispatchEvent(new UIEvent('change'));assert.equal(mergeEnabled,false);
+uiWindow.__thkToolkit.openSettings();dialog=uiDocument.getElementById('thk-toolkit-panel');
+const restoredToggle=dialog.querySelector('#thkMergeUnclassifiedChats');assert.equal(restoredToggle.checked,false,'Reopening settings restores the saved preference');
+mergeSettingsError=true;restoredToggle.checked=true;restoredToggle.dispatchEvent(new UIEvent('change'));
+assert.equal(restoredToggle.checked,false,'A failed save restores the actual preference');
+mergeSettingsError=false;restoredToggle.checked=true;restoredToggle.dispatchEvent(new UIEvent('change'));assert.equal(mergeEnabled,true);
+const mountsBefore=roomMounts;uiObserver();uiObserver();
+assert.equal(uiTimers.filter(timer=>timer.delay===80).length,1,'Toolkit mutation callbacks are batched');
+sidebarScrolling=true;uiTimers.shift().callback();assert.equal(roomMounts,mountsBefore);
+sidebarScrolling=false;uiTimers.shift().callback();assert.equal(roomMounts,mountsBefore+1,'Toolkit refresh resumes after sidebar scrolling');
 uiDocument.getElementById('thkToolkit-pr').click();
 assert.equal(uiDocument.getElementById('thk-toolkit-panel'),null,'PR inserts directly without a popup');
 assert.ok(editor.value.includes('[toall]\n[info]\nProject name: \nPull Request: \nSpec: \nThời gian review dự kiến: \n[/info]\n'));
@@ -154,6 +166,7 @@ editor.value=editor.value.replace('Project name: \n','Project name: Chatwork\n')
 editor.dispatchEvent(new UIEvent('input',{bubbles:true}));
 assert.equal(JSON.parse(uiStore.get('thk-toolkit.prProject')),'Chatwork','Remember project edited directly in chat');
 editor.setSelectionRange(editor.value.length,editor.value.length);
+
 uiDocument.getElementById('thkToolkit-pr').click();
 assert.ok(editor.value.includes('Project name: Chatwork\nPull Request: '));
 assert.equal(editor.selectionStart,editor.value.lastIndexOf('Pull Request: ')+'Pull Request: '.length,'Skip remembered project field');

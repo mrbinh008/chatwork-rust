@@ -10,4 +10,13 @@ for(const size of [16,32]){const rgba=fs.readFileSync(path.join(root,'assets/thk
 const app=fs.readFileSync(path.join(root,'src/app.rs'),'utf8');assert.ok(app.includes('APP_NAME: &str = "THK-Chat"'));
 const plist=fs.readFileSync(path.join(root,'mac/Info.plist'),'utf8');assert.ok(plist.includes('<string>THK-Chat</string>'));assert.ok(plist.includes('<string>com.thk.chat</string>'));
 const installer=fs.readFileSync(path.join(root,'installer.nsi'),'utf8');assert.ok(installer.includes('Name "THK-Chat"'));assert.ok(installer.includes('/oname=THK-Chat.exe'));
-console.log('THK-Chat native icon formats and branding checks passed.');
+const iconSizes={icp4:16,icp5:32,icp6:64,ic07:128,ic08:256,ic09:512,ic10:1024};
+let iconOffset=8;
+while(iconOffset<icns.length){
+    const kind=icns.toString('ascii',iconOffset,iconOffset+4),length=icns.readUInt32BE(iconOffset+4),size=iconSizes[kind];
+    if(size)assert.deepEqual(icns.subarray(iconOffset+8,iconOffset+length),fs.readFileSync(path.join(root,'THK-Chat-Logo-Pack','original-'+size+'.png')),'macOS icon matches the current logo at '+size+'px');
+    iconOffset+=length;
+}
+assert.deepEqual(fs.readFileSync(path.join(root,'assets/thk.png')),fs.readFileSync(path.join(root,'THK-Chat-Logo-Pack/original-512.png')));
+assert.ok(/<key>CFBundleIconFile<\/key>\s*<string>AppIcon.icns<\/string>/.test(plist),'The notification app bundle points to the current icon');
+console.log('THK-Chat native icon formats, current logo pixels and notification bundle icon checks passed.');

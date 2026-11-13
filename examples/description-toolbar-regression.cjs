@@ -5,9 +5,17 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../src/injected.js'), 'utf8');
 
+class Style {
+    constructor(){this.values=new Map();this.priorities=new Map();}
+    getPropertyValue(key){return this.values.get(key)||'';}
+    getPropertyPriority(key){return this.priorities.get(key)||'';}
+    setProperty(key,value,priority=''){this.values.set(key,value);this.priorities.set(key,priority);}
+    removeProperty(key){this.values.delete(key);this.priorities.delete(key);}
+}
 class Node {
     constructor(tag, className = '') {
         this.tagName = tag.toUpperCase(); this.className = className; this.children = []; this.attrs = {}; this.listeners = {};
+        this.style=new Style();this.scrollLeft=0;this.scrollTop=0;this.clientLeft=0;this.clientTop=0;
         this.value = ''; this.selectionStart = 0; this.selectionEnd = 0; this.events = []; this.text = '';
         this.classList = {
             contains: name => this.className.split(' ').includes(name),
@@ -22,6 +30,7 @@ class Node {
     get textContent() { return this.text + this.children.map(child => child.textContent).join(''); }
     appendChild(node) { node.remove(); this.children.push(node); node.parentNode = this; return node; }
     remove() { if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1); this.parentNode = null; }
+    before(node) { node.remove(); this.parentNode.children.splice(this.parentNode.children.indexOf(this), 0, node); node.parentNode = this.parentNode; }
     after(node) { node.remove(); this.parentNode.children.splice(this.parentNode.children.indexOf(this) + 1, 0, node); node.parentNode = this.parentNode; }
     setAttribute(key, value) { this.attrs[key] = String(value); }
     getAttribute(key) { return this.attrs[key] ?? null; }
@@ -30,11 +39,14 @@ class Node {
     focus() { document.activeElement = this; }
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
     dispatchEvent(event) { this.events.push(event.type); }
+    getBoundingClientRect(){return this.tagName==='TEXTAREA'?{left:20,top:40,width:500,height:340}:this.classList.contains('thk-description-toolbar')?{left:20,top:40,width:500,height:38}:{left:0,top:0,width:700,height:500};}
     getClientRects() { return this.collapsed ? [] : [{}]; }
     matches(selector) { return selector.split(',').some(query => {
         query = query.trim();
         if (query.startsWith('#')) return this.id === query.slice(1);
         if (query.startsWith('.')) return query.slice(1).split('.').every(name => this.classList.contains(name));
+        const labelledTag = query.match(/^([a-z]+)\[([a-z-]+)\]$/);
+        if (labelledTag) return this.tagName === labelledTag[1].toUpperCase() && this.getAttribute(labelledTag[2]) !== null;
         const attr = query.match(/^\[([^=*]+)(\*)?(?:="([^"]*)")?\]$/);
         if (attr) {
             const value = attr[1] === 'class' ? this.className : this.getAttribute(attr[1]);
@@ -65,6 +77,7 @@ const heading = new Node('div'); section.appendChild(heading);
 const header = new Node('span', 'roomDescription__headerText'); header.textContent = 'Description'; heading.appendChild(header);
 const inlineDescription = new Node('textarea'); section.appendChild(inlineDescription);
 const context = vm.createContext({document, window: {__thkToolkit: {getLanguage: () => 'vi'}}, navigator: {language: 'vi'},
+    getComputedStyle:node=>({position:node.style.getPropertyValue('position')||'static',boxSizing:'content-box',paddingTop:'8px'}),
     Event: class {constructor(type) {this.type = type;}}, WeakMap});
 const helpers = source.slice(source.indexOf('    function getChatText()'), source.indexOf('    // ── 11.'));
 const icons = source.slice(source.indexOf('    const formattingIcons'), source.indexOf('    function createToolbarElement'));
@@ -116,4 +129,38 @@ dialog.remove(); body.appendChild(dialog); title.textContent = 'Update group des
 assert.equal(body.querySelector('.thk-description-toolbar'), null, 'Hidden editor cannot receive formatting');
 description.collapsed = false; title.className = ''; title.tagName = 'H2'; setup();
 assert.ok(dialog.querySelector('.thk-description-toolbar'), 'Semantic popup titles work when generated class names change');
-console.log('Description toolbar placement, formatting, selection, React remounts and popup lifecycle checks passed.');
+dialog.remove();setup();
+const modalRoot=new Node('div');modalRoot.id='RootModalsEntryPoint';body.appendChild(modalRoot);
+const groupDialog=new Node('div');groupDialog.setAttribute('role','dialog');modalRoot.appendChild(groupDialog);
+const settingsHeading=new Node('h2');settingsHeading.textContent='Cài đặt Trò chuyện Nhóm';groupDialog.appendChild(settingsHeading);
+const groupName=new Node('input');groupName.value='Keep group name';groupDialog.appendChild(groupName);
+const descriptionRow=new Node('div');groupDialog.appendChild(descriptionRow);
+const descriptionLabel=new Node('label');descriptionLabel.textContent='Mô tả:';descriptionLabel.setAttribute('for','group-description');descriptionRow.appendChild(descriptionLabel);
+const groupDescription=new Node('textarea');groupDescription.id='group-description';descriptionRow.appendChild(groupDescription);
+const notesRow=new Node('div');groupDialog.appendChild(notesRow);
+const notesLabel=new Node('label');notesLabel.textContent='Notes';notesRow.appendChild(notesLabel);
+const notesEditor=new Node('textarea');notesEditor.value='Keep notes';notesRow.appendChild(notesEditor);
+setup();setup();
+assert.equal(groupDialog.querySelectorAll('.thk-description-toolbar').length,1,'Group Chat Settings has one description toolbar even with other editors');
+assert.ok(descriptionLabel.nextElementSibling.classList.contains('thk-description-toolbar'));
+assert.equal(descriptionLabel.nextElementSibling.nextElementSibling,groupDescription,'Shortcuts are immediately above the description textarea');
+assert.equal(notesRow.querySelector('.thk-description-toolbar'),null,'Other settings fields do not receive description shortcuts');
+assert.ok(descriptionRow.querySelector('.thk-description-toolbar').classList.contains('thk-description-field-toolbar'),'Settings shortcuts overlay the description field instead of adding a form row');
+assert.equal(groupDescription.style.getPropertyValue('height'),'340px','Native field outer height is preserved');
+assert.equal(groupDescription.style.getPropertyValue('padding-top'),'46px');
+setup();assert.equal(groupDescription.style.getPropertyValue('padding-top'),'46px','Repeated passes never accumulate toolbar padding');
+const settingsControls=()=>descriptionRow.querySelector('.thk-description-toolbar').children;
+for(const [index,initial,expected] of [[0,'Description','[info]'],[1,'Body','[title]'],[2,'let a = 1;','[code]'],[3,'','[hr]']]) {
+    groupDescription.value=initial;groupDescription.setSelectionRange(0,initial.length);composer.focus();settingsControls()[index].fire('click');
+    assert.ok(groupDescription.value.includes(expected));assert.equal(groupName.value,'Keep group name');assert.equal(notesEditor.value,'Keep notes');assert.equal(composer.value,'Unsent chat draft');
+}
+settingsControls()[4].fire('click');assert.equal(context.previewEditor,groupDescription);
+// Native group settings may use an unassociated caption instead of label/for.
+descriptionLabel.remove();const caption=new Node('span');caption.textContent='Mô tả:';descriptionRow.appendChild(caption);groupDescription.id='';setup();
+assert.equal(groupDialog.querySelectorAll('.thk-description-toolbar').length,1,'Decomposed Vietnamese captions identify an unlabelled group description');
+groupDescription.readOnly=true;setup();assert.equal(descriptionRow.querySelector('.thk-description-toolbar'),null);
+assert.equal(groupDescription.style.getPropertyValue('height'),'');assert.equal(groupDescription.style.getPropertyValue('padding-top'),'');
+assert.equal(descriptionRow.style.getPropertyValue('position'),'','Removing shortcuts restores native layout');
+groupDescription.readOnly=false;setup();const staleSettingsControl=settingsControls()[0];
+modalRoot.remove();setup();staleSettingsControl.fire('click');assert.equal(composer.value,'Unsent chat draft','Closing group settings cannot redirect formatting into chat');
+console.log('Description and Group Chat Settings toolbars, formatting targets, Unicode labels and popup lifecycle checks passed.');
