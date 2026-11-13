@@ -28,7 +28,7 @@ jobs:
 
       - name: Test Chatwork extensions
         run: |
-          for check in toolkit room-directory native-folders folder-auto files downloads file-preview branding ui-render request-navigation formatting-editors description-toolbar mention; do
+          for check in toolkit room-directory native-folders folder-layout files downloads file-preview branding ui-render request-navigation formatting-editors description-toolbar mention; do
             node "examples/$check-regression.cjs"
           done
 

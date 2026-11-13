@@ -135,56 +135,40 @@ pub fn show_notification(
 
     #[cfg(windows)]
     {
-        let mut noti = notify_rust::Notification::new();
-        noti.app_id("THK")
-            .appname(crate::app::APP_NAME)
-            .summary(&safe_title)
-            .body(&safe_body)
-            .action("open", "Mở THK-Chat")
-            .timeout(notify_rust::Timeout::Milliseconds(5000));
-
-        if !icon_to_use.is_empty() {
-            noti.icon(&icon_to_use);
-        }
-
-        let show_result = noti.show();
-        let handle = match show_result {
-            Ok(h) => Ok(h),
-            Err(e) => {
-                warn!("Notification with app_id THK failed ({:?}), retrying with fallback...", e);
-                let mut fallback_noti = notify_rust::Notification::new();
-                fallback_noti
-                    .appname(crate::app::APP_NAME)
-                    .summary(&safe_title)
-                    .body(&safe_body)
-                    .action("open", "Mở THK-Chat")
-                    .timeout(notify_rust::Timeout::Milliseconds(5000));
-                if !icon_to_use.is_empty() {
-                    fallback_noti.icon(&icon_to_use);
-                }
-                fallback_noti.show()
+        use winrt_notification::{Duration, IconCrop, Toast};
+        let build = |app_id: &str, with_avatar: bool| {
+            let mut toast = Toast::new(app_id).title(&safe_title).text1(&safe_body)
+                .add_button("Mở THK-Chat", "open").duration(Duration::Short);
+            if with_avatar && !icon_to_use.is_empty() {
+                toast = toast.icon(std::path::Path::new(&icon_to_use), IconCrop::Circular, "Avatar");
             }
-        };
-
-        match handle {
-            Ok(h) => {
-                info!("Notification shown successfully: {}", safe_title);
-                if let Some(proxy) = proxy {
-                    std::thread::spawn(move || {
-                        let _ = h.wait_for_response(move |response: &notify_rust::NotificationResponse| {
-                            let _ = proxy.send_event(UserEvent::NotificationInteraction {
-                                id,
-                                target,
-                                activated: is_notification_activation(response),
-                            });
-                        });
+            let activate_proxy = proxy.clone(); let activate_id = id.clone(); let activate_target = target.clone();
+            toast.on_activated(move |action| {
+                let response = action.map(notify_rust::NotificationResponse::Action)
+                    .unwrap_or(notify_rust::NotificationResponse::Default);
+                if let Some(proxy) = &activate_proxy {
+                    let _ = proxy.send_event(UserEvent::NotificationInteraction {
+                        id:activate_id.clone(), target:activate_target.clone(), activated:is_notification_activation(&response),
                     });
                 }
+                Ok(())
+            }).on_dismissed({
+                let proxy = proxy.clone(); let id = id.clone(); let target = target.clone();
+                move |_| {
+                    if let Some(proxy) = &proxy {
+                        let _ = proxy.send_event(UserEvent::NotificationInteraction { id:id.clone(), target:target.clone(), activated:false });
+                    }
+                    Ok(())
+                }
+            })
+        };
+        if let Err(error) = build("THK", true).show() {
+            warn!("Notification with avatar failed ({:?}), retrying without image", error);
+            if let Err(error) = build(Toast::POWERSHELL_APP_ID, false).show() {
+                warn!("Failed to show notification: {:?}", error);
             }
-            Err(e) => warn!("Failed to show notification: {}", e),
         }
     }
-
     #[cfg(target_os = "macos")]
     {
         let mut noti = notify_rust::Notification::new();
@@ -232,7 +216,14 @@ fn resolve_notification_icon(icon: Option<&str>) -> String {
     if let Some(ic) = icon {
         let trimmed = ic.trim();
         if !trimmed.is_empty() {
-            return trimmed.to_string();
+            #[cfg(windows)]
+            {
+                if trimmed.starts_with("https://") {
+                    if let Some(path) = cache_notification_avatar(trimmed) { return path.to_string_lossy().into_owned(); }
+                } else if std::path::Path::new(trimmed).is_file() { return trimmed.to_string(); }
+            }
+            #[cfg(not(windows))]
+            { return trimmed.to_string(); }
         }
     }
 
@@ -249,6 +240,62 @@ fn resolve_notification_icon(icon: Option<&str>) -> String {
     }
 }
 
+#[cfg(any(windows, test))]
+fn is_avatar_url(address: &str) -> bool {
+    let Ok(uri) = address.parse::<wry::http::Uri>() else { return false; };
+    let Some(host) = uri.host().map(str::to_ascii_lowercase) else { return false; };
+    uri.scheme_str() == Some("https") && ["chatwork.com", "kcw.kddi.ne.jp", "kcw.kddi.com"]
+        .iter().any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+}
+#[cfg(any(windows, test))]
+fn avatar_image_extension(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") { Some("png") }
+    else if bytes.starts_with(&[0xff,0xd8,0xff]) { Some("jpg") }
+    else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") { Some("gif") }
+    else { None }
+}
+#[cfg(windows)]
+fn cache_notification_avatar(address: &str) -> Option<std::path::PathBuf> {
+    use std::{fs, hash::{Hash, Hasher}, os::windows::process::CommandExt, process::{Command, Stdio},
+        sync::atomic::{AtomicU64, Ordering}, time::Duration};
+    if address.len() > 8192 || !is_avatar_url(address) { return None; }
+    let directory = dirs::cache_dir()?.join("THK-Chat").join("notification-avatars");
+    fs::create_dir_all(&directory).ok()?;
+    let mut hash = std::collections::hash_map::DefaultHasher::new(); address.hash(&mut hash);
+    let stem = format!("{:016x}", hash.finish());
+    for extension in ["png", "jpg", "gif"] {
+        let path = directory.join(format!("{stem}.{extension}"));
+        if fs::metadata(&path).ok().and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.elapsed().ok()).is_some_and(|age| age < Duration::from_secs(86400)) {
+            return Some(path);
+        }
+    }
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let pending = directory.join(format!("{stem}-{}-{}.part", std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+    let result = (|| {
+        let status = Command::new("C:\\Windows\\System32\\curl.exe").creation_flags(0x0800_0000)
+            .args(["--silent", "--fail", "--location", "--proto", "=https", "--proto-redir", "=https",
+                "--connect-timeout", "2", "--max-time", "3", "--max-filesize", "1048576", "--output"])
+            .arg(&pending).arg(address).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().ok()?;
+        if !status.success() || fs::metadata(&pending).ok()?.len() > 1_048_576 { return None; }
+        let bytes = fs::read(&pending).ok()?;
+        let extension = avatar_image_extension(&bytes)?;
+        let path = directory.join(format!("{stem}.{extension}"));
+        fs::rename(&pending, &path).ok()?;
+        // Keep files for notification history, and expire only this cache's old images.
+        for entry in fs::read_dir(&directory).ok()?.flatten() {
+            let expired = entry.metadata().ok().filter(|metadata| metadata.is_file())
+                .and_then(|metadata| metadata.modified().ok()).and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age > Duration::from_secs(7 * 86400));
+            if expired {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+        Some(path)
+    })();
+    let _ = fs::remove_file(&pending);
+    result
+}
 fn is_notification_activation(response: &notify_rust::NotificationResponse) -> bool {
     matches!(response, notify_rust::NotificationResponse::Default)
         || matches!(response, notify_rust::NotificationResponse::Action(action) if action == "open" || action == "default")
@@ -268,6 +315,23 @@ pub fn format_badge_count(count: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn avatars_only_load_from_chatwork_https_hosts() {
+        assert!(is_avatar_url("https://appdata.chatwork.com/avatar/123.png"));
+        assert!(is_avatar_url("https://kcw.kddi.ne.jp/avatar/123"));
+        for address in ["https://chatwork.com.evil.test/a.png", "https://evilchatwork.com/a.png", "http://appdata.chatwork.com/a.png", "file:///C:/avatar.png"] {
+            assert!(!is_avatar_url(address));
+        }
+    }
+    #[test]
+    fn downloaded_avatar_formats_are_recognized() {
+        assert_eq!(avatar_image_extension(b"\x89PNG\r\n\x1a\nrest"), Some("png"));
+        assert_eq!(avatar_image_extension(&[0xff,0xd8,0xff,0xe0]), Some("jpg"));
+        assert_eq!(avatar_image_extension(b"GIF89a"), Some("gif"));
+        assert_eq!(avatar_image_extension(b"<html>Login</html>"), None);
+        assert_eq!(avatar_image_extension(b""), None);
+    }
 
     #[test]
     fn body_click_and_open_action_activate_notification() {

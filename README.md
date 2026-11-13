@@ -1,10 +1,10 @@
 # THK-Chat Desktop
 
-Ứng dụng desktop cho Chatwork, kết hợp giao diện web Chatwork với các tiện ích làm việc của THK: tổ chức danh mục theo cây, gom nhóm theo prefix, định dạng nội dung, tạo mẫu nghỉ phép/Pull Request và quản lý tệp đính kèm.
+Ứng dụng desktop cho Chatwork, kết hợp giao diện web Chatwork với các tiện ích làm việc của THK: tổ chức danh mục theo cây, định dạng nội dung, tạo mẫu nghỉ phép/Pull Request và quản lý tệp đính kèm.
 
 Windows sử dụng **Rust + WebView2**; macOS sử dụng **Swift + AppKit + WKWebView**. Ứng dụng dùng WebView của hệ thống, không đóng gói Electron hoặc Node.js để chạy.
 
-**Phiên bản trong mã nguồn: 2.26.4** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
+**Phiên bản trong mã nguồn: 2.26.7** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
 
 ## Mục lục
 
@@ -64,7 +64,7 @@ Sau khi chọn một phòng chat:
 
 - Dùng các icon trên thanh soạn tin để chèn Info, Tiêu đề, Code, đường kẻ hoặc xem trước.
 - Mở **⚙ Cài đặt** để chọn ngôn ngữ, bật/tắt nút và đặt phím tắt.
-- Dùng các nút `+`, `↳`, `⚡` trên danh mục bên trái để tổ chức thư mục.
+- Mở **Mở menu danh mục** bên trái, dùng `+` và `↳` để tổ chức thư mục.
 - Mở **Quản lý file** để tìm và xem tệp của phòng hiện tại.
 
 Đóng cửa sổ chính sẽ ẩn app để tiếp tục chạy. Để thoát hẳn, chọn **Quit/Thoát** trong menu ứng dụng hoặc tray/menu bar. Mở app lần nữa sẽ kích hoạt phiên đang chạy.
@@ -73,50 +73,28 @@ Sau khi chọn một phòng chat:
 
 ### 1. Danh mục phòng theo cây thư mục
 
-Cây được hiển thị ngay trên **các danh mục có sẵn của Chatwork**, trong vùng danh sách phòng bên trái. Các menu sửa/xóa, nút gập/mở và thao tác chọn phòng của Chatwork được giữ lại.
+Cây được hiển thị ngay trên **các danh mục có sẵn của Chatwork**, trong vùng danh sách phòng bên trái. Các menu sửa/xóa, nút gập/mở và thao tác chọn phòng của Chatwork được giữ lại. Danh mục và phòng giữ thứ tự dữ liệu server trong từng cấp, thư mục con nằm trước các phòng của cha; phòng đã có trong nhánh con được ẩn ở cha.
 
-| Nút trên danh mục | Chức năng |
+| Thao tác trong menu danh mục | Chức năng |
 |---|---|
 | `+` | Tạo danh mục con và chọn các phòng đưa vào |
 | `↳` | Chọn hoặc thay đổi thư mục cha |
-| `⚡` | Gom nhóm theo prefix, mặc định chọn danh mục này làm nơi chứa |
 
 **Tạo thư mục con:**
 
 1. Tạo danh mục bằng menu có sẵn của Chatwork nếu chưa có danh mục cha.
-2. Bấm `+` trên danh mục cha, nhập tên và kiểm tra ô **Thư mục cha**.
+2. Mở menu danh mục cha, bấm `+`, nhập tên và kiểm tra ô **Thư mục cha**.
 3. Chọn phòng/nhóm/người dùng muốn đưa vào danh mục, rồi bấm **Lưu**.
 
 Danh sách chọn đọc toàn bộ phòng và liên lạc có sẵn trong kho dữ liệu của phiên Chatwork, thay vì chỉ lấy các dòng đang thấy trên màn hình. Tên chat cá nhân được lấy từ người liên lạc tương ứng.
 
 Bạn có thể lọc **Tất cả / Nhóm / Người dùng / Chat của tôi**, tìm tên có hoặc không dấu, chọn các mục đang lọc và bấm **Tải lại**. Các mục đã chọn được giữ khi tìm kiếm hoặc tải lại. Liên lạc chưa có phòng chat được ghi rõ và chưa thể chọn; hãy mở cuộc trò chuyện trước khi thêm vào danh mục.
 
-**Đổi nhánh:** bấm `↳`, chọn thư mục cha khác hoặc **Thư mục gốc**, rồi lưu. Có thể tạo nhiều cấp; ứng dụng kiểm tra để tránh chọn chính thư mục đó hoặc một thư mục con của nó làm cha.
+**Đổi nhánh:** mở menu danh mục, bấm `↳`, chọn thư mục cha khác hoặc **Thư mục gốc**, rồi lưu. Có thể tạo nhiều cấp; ứng dụng kiểm tra để tránh chọn chính thư mục đó hoặc một thư mục con của nó làm cha.
 
-Chatwork lưu danh mục và danh sách phòng. **Quan hệ cha–con do Toolkit lưu trên thiết bị**, riêng theo tài khoản. Vì vậy, tên danh mục và phòng có thể đồng bộ qua Chatwork, còn cấu trúc cây trên Windows không tự chuyển sang Mac hoặc máy khác.
+Chatwork lưu danh mục và danh sách phòng. **Quan hệ cha–con do Toolkit lưu trên thiết bị**, riêng theo tài khoản. Vì vậy, tên danh mục và phòng có thể đồng bộ qua Chatwork, còn cấu trúc cây được chuyển giữa các thiết bị bằng file JSON trong **Cài đặt → Đồng bộ cây thư mục**. Bấm **Export cây thư mục**, chuyển file sang thiết bị khác cùng tài khoản, bấm **Import cây thư mục**, kiểm tra số thay đổi rồi bấm **Áp dụng cây thư mục**. Các danh mục ngoài file vẫn được giữ; danh mục chưa có được báo bỏ qua.
 
-### 2. Tự động gom nhóm theo prefix
-
-Bấm `⚡` cạnh phần điều khiển danh sách phòng hoặc trên một danh mục:
-
-1. Chọn thư mục đích, hoặc **Danh mục gốc**.
-2. Xem trước các nhánh và số nhóm phù hợp.
-3. Chọn **Tự động thêm nhóm mới có cùng prefix** nếu muốn tiếp tục áp dụng quy tắc về sau.
-4. Bấm **Áp dụng**.
-
-| Tên nhóm | Nhánh được tạo/dùng lại |
-|---|---|
-| `[HN] API` | `HN` |
-| `【HN】 Website` | `HN` |
-| `THK / Frontend / Sprint` | `THK → Frontend` |
-| `PMS - Review` | `PMS` |
-| `Release-70` | Không khớp quy tắc prefix mặc định |
-
-Dấu gạch ngang dùng làm dấu phân cách cần có khoảng trắng hai bên: ` - `. Chức năng gom áp dụng cho **nhóm chat**, giữ các phòng đã có trong danh mục và dùng lại nhánh tương ứng khi chạy lại.
-
-Quy tắc tự gom lưu trên thiết bị theo tài khoản và thư mục đích. Khi được bật, quy tắc được kiểm tra lúc app đang chạy và dữ liệu phòng thay đổi. Có thể mở lại `⚡`, bỏ chọn chế độ tự động và bấm **Áp dụng** để tắt cho thư mục đích đó.
-
-### 3. Định dạng tin nhắn và mô tả nhóm
+### 2. Định dạng tin nhắn và mô tả nhóm
 
 Các icon **Info, Tiêu đề, Code, Đường kẻ, Xem trước** nằm trên thanh soạn tin. Chọn một đoạn văn bản trước khi bấm để bọc đoạn đó bằng thẻ Chatwork, hoặc đặt con trỏ để chèn mẫu trống.
 
@@ -124,13 +102,13 @@ Khi mở popup **Chỉnh sửa mô tả**, cùng bộ icon xuất hiện **bên 
 
 Xem trước mô phỏng các thẻ Chatwork như Info, Title, Code, Quote, HR và TO. Markdown như `**bold**` được giữ dạng chữ theo bộ dựng hiện tại. Nút sao chép trên khối code giúp lấy nội dung mã mà không kèm nút giao diện.
 
-### 4. Mention thành viên
+### 3. Mention thành viên
 
 Gõ `@` và một phần tên trong ô chat để mở danh sách gợi ý. Có thể tìm có/không dấu và tên nhiều từ; dùng `↑`/`↓`, rồi **Enter** hoặc **Tab** để chọn. Danh sách có lựa chọn `@ALL` và đánh dấu người đã được tag trong nội dung.
 
 Nguồn thành viên gồm thành viên phòng và thành viên từ các team liên quan mà Chatwork cung cấp. Emoji sử dụng giao diện có sẵn của Chatwork.
 
-### 5. Mẫu nghỉ phép / báo bận
+### 4. Mẫu nghỉ phép / báo bận
 
 Bấm nút lịch để chọn loại yêu cầu, ngày nghỉ, giờ bắt đầu/kết thúc, lý do và các leader cần tag. Mỗi ngày có khoảng giờ riêng; có thể thêm từng ngày hoặc thêm cả khoảng ngày cùng giờ. Form hỗ trợ xem trước, sao chép, chèn vào ô chat và gửi.
 
@@ -146,7 +124,7 @@ Ví dụ nội dung được tạo:
 
 Theo mặc định, nút xuất hiện trong phòng có tên chứa `Attendance infor_THKHN`. Có thể thay đổi việc hiển thị trong Cài đặt.
 
-### 6. Mẫu Pull Request
+### 5. Mẫu Pull Request
 
 Nút PR chèn mẫu trực tiếp vào ô chat:
 
@@ -162,7 +140,7 @@ Thời gian review dự kiến:
 
 Tên dự án được ghi nhớ khi bạn sửa trong mẫu; lần chèn sau con trỏ chuyển đến trường còn cần nhập. Theo mặc định, nút xuất hiện trong phòng có tên chứa `【HN】Source Code Review`; có thể bật ở phòng khác qua Cài đặt.
 
-### 7. Quản lý và xem trước file
+### 6. Quản lý và xem trước file
 
 Mở **Quản lý file** từ thanh soạn tin, lọc **Tất cả / Ảnh / Tài liệu / Video / Khác**, rồi tìm theo tên file hoặc người tải lên. Bấm tên file/nút **Xem trước** để mở nội dung, hoặc **Tải xuống** để chọn nơi lưu bằng hộp thoại hệ điều hành.
 
@@ -178,7 +156,7 @@ Giới hạn tải bản xem trước văn bản là **2 MiB**, DOCX/XLSX/PPTX *
 
 Danh sách file sử dụng phản hồi Chatwork hiện có. Khi không đọc được API, app có thể lấy các tệp đính kèm từ phần tin nhắn đã tải và ghi rõ nguồn dữ liệu. Đây không phải công cụ xuất toàn bộ lịch sử file của tài khoản.
 
-### 8. Cài đặt, thông báo và điều khiển cửa sổ
+### 7. Cài đặt, thông báo và điều khiển cửa sổ
 
 - **Cài đặt Toolkit:** ngôn ngữ Auto/Tiếng Việt/English/日本語, bật/tắt nút và gán lại phím tắt.
 - **Phạm vi hiển thị nút:** nhóm hiện tại hoặc tất cả nhóm. Thiết lập riêng của nhóm được ưu tiên; nút dùng thiết lập chung xóa phần ghi đè của nhóm đó.
@@ -189,7 +167,7 @@ Danh sách file sử dụng phản hồi Chatwork hiện có. Khi không đọc 
 
 Để cấu hình thanh công cụ, mở **⚙**, chọn phạm vi rồi bật/tắt từng nút. Để đổi phím tắt, bấm ô tổ hợp phím hiện tại và nhấn tổ hợp mới; `Esc` hủy ghi nhận. `Backspace`/`Delete` xóa phần gán riêng để trở về tổ hợp mặc định.
 
-### 9. Cập nhật ứng dụng
+### 8. Cập nhật ứng dụng
 
 App kiểm tra bản stable trên GitHub Releases lúc khởi động và theo chu kỳ khoảng 6 giờ. Có thể kiểm tra thủ công tại:
 
@@ -236,7 +214,7 @@ flowchart LR
 3. **Nạp Toolkit:** host đưa các script và CSS đi kèm bản build vào trang. Toolkit thêm công cụ soạn thảo, popup, danh mục và quản lý file.
 4. **Đọc dữ liệu:** Toolkit dùng kho phòng/người dùng và các chức năng sẵn có trong phiên Chatwork. Các yêu cầu danh mục sử dụng dịch vụ native của trang, cùng phiên đăng nhập và quyền hiện tại.
 5. **Tương tác hệ điều hành:** JavaScript gửi thông điệp JSON qua IPC để host xử lý thông báo, badge hoặc cập nhật. Tải file được kết nối với WebView và hộp thoại lưu native.
-6. **Theo dõi giao diện:** các observer và kiểm tra định kỳ gắn lại công cụ khi Chatwork dựng lại DOM hoặc đổi phòng. Quy tắc prefix cũng được kiểm tra trong quá trình này.
+6. **Theo dõi giao diện:** các observer và kiểm tra định kỳ gắn lại công cụ khi Chatwork dựng lại DOM hoặc đổi phòng.
 
 App không có backend Chatwork riêng. Dịch vụ Chatwork tiếp tục quản lý tin nhắn, tài khoản, nhóm và phân quyền; GitHub Releases cung cấp gói cập nhật desktop.
 
@@ -245,7 +223,7 @@ App không có backend Chatwork riêng. Dịch vụ Chatwork tiếp tục quản
 | Dữ liệu | Nơi lưu |
 |---|---|
 | Phòng, tin nhắn, liên lạc, tên danh mục, phòng trong danh mục | Dịch vụ Chatwork |
-| Quan hệ thư mục cha/con và quy tắc auto gom | `localStorage` của WebView, riêng theo tài khoản |
+| Quan hệ thư mục cha/con | `localStorage` của WebView, riêng theo tài khoản |
 | Ngôn ngữ Toolkit, nút hiển thị, phím tắt, tên dự án PR… | `localStorage` của WebView |
 | Phiên đăng nhập | Kho cookie/website data của WebView |
 | Cấu hình host Windows | `%APPDATA%\Chatwork\config.json` |
@@ -253,7 +231,7 @@ App không có backend Chatwork riêng. Dịch vụ Chatwork tiếp tục quản
 | Cấu hình host Mac | UserDefaults; vị trí cửa sổ do AppKit lưu |
 | Website data Mac | Kho bền vững mặc định của WebKit |
 
-Thiết lập local phụ thuộc hồ sơ WebView và thiết bị. Xóa website data có thể làm mất phiên đăng nhập và thiết lập Toolkit trên máy; cài app trên thiết bị mới cần thiết lập lại cấu trúc cây và quy tắc auto gom.
+Thiết lập local phụ thuộc hồ sơ WebView và thiết bị. Xóa website data có thể làm mất phiên đăng nhập và thiết lập Toolkit trên máy; cài app trên thiết bị mới cần thiết lập lại cấu trúc cây.
 
 ## Build, kiểm thử và phát hành
 
@@ -288,7 +266,7 @@ Kiểm thử JavaScript dùng các module có sẵn của Node.js:
 
 ```powershell
 $checks = @(
-    'toolkit', 'room-directory', 'native-folders', 'folder-auto',
+    'toolkit', 'room-directory', 'native-folders', 'folder-layout',
     'description-toolbar', 'formatting-editors', 'mention', 'ui-render',
     'files', 'downloads', 'file-preview', 'branding', 'request-navigation'
 )
@@ -304,7 +282,7 @@ Trên Mac:
 
 ```bash
 bash mac/test-native.sh
-node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.4-macOS-Universal/THK-Chat.app
+node examples/mac-bundle-regression.cjs dist/THK-Chat-v2.26.7-macOS-Universal/THK-Chat.app
 ```
 
 Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu phiên bản, hai kiến trúc, toàn bộ script/CSS, updater và icon trong gói với mã nguồn.
@@ -320,7 +298,7 @@ Bài kiểm tra bundle cần chạy sau khi đã build Universal; đối chiếu
 
 1. Đồng bộ phiên bản trong `Cargo.toml`, `Cargo.lock`, `mac/Info.plist`, giá trị mặc định của `installer.nsi` và phần giới thiệu README.
 2. Chạy kiểm thử, commit và push code.
-3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.4`.
+3. Tạo/push tag khớp phiên bản, ví dụ `v2.26.7`.
 4. Kiểm tra Actions và các asset trên trang Releases.
 
 Updater sử dụng gói `THK-Chat-v<version>-Windows-x64.zip` hoặc `THK-Chat-v<version>-macOS-Universal.tar.gz`. Các file SHA256 được phát hành cùng bộ cài và archive.
@@ -333,7 +311,7 @@ Updater sử dụng gói `THK-Chat-v<version>-Windows-x64.zip` hoặc `THK-Chat-
 | `src/menu.rs`, `src/tray.rs`, `src/notification.rs`, `src/taskbar.rs` | Menu, tray, thông báo và badge Windows |
 | `src/injected.js`, `src/ui.css` | Định dạng, mention, form nghỉ, preview và giao diện Toolkit |
 | `src/toolkit.js` | Cài đặt, phím tắt, PR và danh sách phòng/liên lạc |
-| `src/room-folders.js`, `src/folder-auto-group.js` | Phân cấp danh mục và gom prefix |
+| `src/room-folders.js` | Phân cấp danh mục, giữ thứ tự server trong mỗi cấp |
 | `src/files.js`, `src/file-preview.js`, `src/downloads.js` | Quản lý, xem trước và điều phối tải file |
 | `src/updater.rs`, `src/update-ui.js`, `ota/` | Cập nhật và giao diện cập nhật |
 | `mac/Native/` | Host Swift, chính sách điều hướng và updater Mac |
@@ -344,7 +322,7 @@ Updater sử dụng gói `THK-Chat-v<version>-Windows-x64.zip` hoặc `THK-Chat-
 
 - **Không thấy công cụ hoặc bố cục thay đổi:** thử tải lại từ menu View và kiểm tra bản cập nhật. Các tiện ích tích hợp với DOM/dịch vụ nội bộ của trang nên có thể cần điều chỉnh khi Chatwork đổi giao diện.
 - **Danh sách chọn thiếu tên hoặc chưa cập nhật:** kiểm tra bộ lọc/từ khóa, bấm Tải lại và chờ cập nhật thông tin liên lạc. Dữ liệu phụ thuộc phiên đăng nhập và quyền truy cập Chatwork.
-- **Thư mục trên máy khác có cấu trúc khác:** thiết lập lại quan hệ cha/con và quy tắc auto gom trên thiết bị đó; các thiết lập này lưu local.
+- **Thư mục trên máy khác có cấu trúc khác:** thiết lập lại quan hệ cha/con trên thiết bị đó; các thiết lập này lưu local.
 - **Không nhận thông báo:** kiểm tra quyền thông báo của hệ điều hành và thiết lập thông báo của Chatwork. Ảnh người gửi và điều hướng đến tin nhắn phụ thuộc dữ liệu thông báo nhận được.
 - **Không xem được file:** dùng Tải xuống để mở bằng ứng dụng phù hợp. Quyền truy cập, giới hạn dung lượng và codec của WebView ảnh hưởng khả năng xem trước.
 - **Không cập nhật được:** kiểm tra kết nối GitHub, quyền ghi thư mục ứng dụng và việc app đang chạy từ gói cài đặt hợp lệ. Bản Mac nên nằm trong Applications.

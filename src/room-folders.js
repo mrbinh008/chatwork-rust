@@ -8,9 +8,12 @@
         ja: {child:'+ 子フォルダ', parent:'親フォルダ', root:'[ルートフォルダ]', name:'フォルダ名', rooms:'ルームを選択', search:'ルームを検索…', save:'保存', local:'フォルダ階層はこの端末に保存されます。', failed:'保存できませんでした。もう一度お試しください。', unavailable:'Chatworkのカテゴリを読み込めません。', stale:'フォルダが変更されました。親フォルダを選択し直してください。'}
     };
     const text = key => (labels[window.__thkToolkit?.getLanguage() || 'en'] || labels.en)[key];
-    Object.assign(labels.vi, {all:'Tất cả',group:'Nhóm',direct:'Người dùng',mychat:'Chat của tôi',reload:'Tải lại',selectAll:'Chọn các mục đang lọc',clear:'Bỏ chọn',loading:'Đang cập nhật danh sách…',empty:'Không có mục phù hợp.',pending:'Chưa có phòng chat — mở cuộc trò chuyện trước khi thêm vào danh mục.',cached:'Chưa tải lại được; đang hiển thị dữ liệu hiện có.',selected:'đã chọn',items:'mục',auto:'Tự động gom theo prefix'});
-    Object.assign(labels.en, {all:'All',group:'Groups',direct:'People',mychat:'My Chat',reload:'Refresh',selectAll:'Select filtered items',clear:'Clear selection',loading:'Refreshing directory…',empty:'No matching items.',pending:'No chat yet — open a conversation before adding it to a category.',cached:'Refresh failed; showing available data.',selected:'selected',items:'items',auto:'Auto group by prefix'});
-    Object.assign(labels.ja, {all:'すべて',group:'グループ',direct:'ユーザー',mychat:'マイチャット',reload:'再読み込み',selectAll:'絞り込みを選択',clear:'選択解除',loading:'一覧を更新中…',empty:'該当する項目はありません。',pending:'チャットを開始してからカテゴリに追加してください。',cached:'再読み込みできません。保存済みの一覧を表示しています。',selected:'選択',items:'件',auto:'接頭辞で自動分類'});
+    Object.assign(labels.vi, {all:'Tất cả',group:'Nhóm',direct:'Người dùng',mychat:'Chat của tôi',reload:'Tải lại',selectAll:'Chọn các mục đang lọc',clear:'Bỏ chọn',loading:'Đang cập nhật danh sách…',empty:'Không có mục phù hợp.',pending:'Chưa có phòng chat — mở cuộc trò chuyện trước khi thêm vào danh mục.',cached:'Chưa tải lại được; đang hiển thị dữ liệu hiện có.',selected:'đã chọn',items:'mục'});
+    Object.assign(labels.en, {all:'All',group:'Groups',direct:'People',mychat:'My Chat',reload:'Refresh',selectAll:'Select filtered items',clear:'Clear selection',loading:'Refreshing directory…',empty:'No matching items.',pending:'No chat yet — open a conversation before adding it to a category.',cached:'Refresh failed; showing available data.',selected:'selected',items:'items'});
+    Object.assign(labels.ja, {all:'すべて',group:'グループ',direct:'ユーザー',mychat:'マイチャット',reload:'再読み込み',selectAll:'絞り込みを選択',clear:'選択解除',loading:'一覧を更新中…',empty:'該当する項目はありません。',pending:'チャットを開始してからカテゴリに追加してください。',cached:'再読み込みできません。保存済みの一覧を表示しています。',selected:'選択',items:'件'});
+    Object.assign(labels.vi, {transferInvalid:'File cây thư mục không hợp lệ hoặc không được hỗ trợ.', transferAccount:'File này thuộc tài khoản Chatwork khác.', transferCycle:'Cây thư mục bị lặp hoặc có quá nhiều cấp.'});
+    Object.assign(labels.en, {transferInvalid:'Invalid or unsupported folder tree file.', transferAccount:'This file belongs to another Chatwork account.', transferCycle:'The folder tree contains a cycle or too many levels.'});
+    Object.assign(labels.ja, {transferInvalid:'フォルダツリーファイルが無効か未対応です。', transferAccount:'別のChatworkアカウントのファイルです。', transferCycle:'フォルダに循環参照があるか、階層が深すぎます。'});
     const value = object => object?.getValue?.() ?? object?.value ?? object;
     function services() {
         const app = window.CW?.application;
@@ -18,14 +21,77 @@
     }
     function categories() {
         try {
-            return (services().categories?.getSortedCategories() || []).map(category => ({
+            // Read the repository directly: getSortedCategories() alphabetizes names.
+            const service = services().categories;
+            const repository = service?.customCategoryRepository ?? service?.categoryRepository;
+            const records = repository?.getAll?.() ?? Object.values(repository?.entities || {});
+            return records.map(category => ({
                 id:String(value(category.identity)), name:String(category.getName?.() ?? value(category.name) ?? ''),
                 rooms:(category.getRoomIds?.() || category.roomIds || []).map(id => String(value(id)))
             }));
         } catch (_) { return []; }
     }
     function storageKey() {
-        return 'thk-toolkit.nativeFolderParents.' + String(value(window.CW?.application?.myId) ?? 'default');
+        return 'thk-toolkit.nativeFolderParents.' + (accountId() || 'default');
+    }
+    function accountId() {
+        let account = window.CW?.application?.myId;
+        for (let depth = 0; account && typeof account === 'object' && depth < 5; depth++) {
+            account = account.getValue?.() ?? account.value ?? account.userId ?? account.identity;
+        }
+        return typeof account === 'string' || typeof account === 'number' ? String(account) : '';
+    }
+    function exportTree() {
+        const account = accountId();
+        if (!account || !services().categories) throw new Error(text('unavailable'));
+        const list = categories(), tree = new Map(flatten(buildTree(list, readParents())).map(folder => [folder.id, folder]));
+        return {format:'thk-chat.folder-tree', version:1, accountId:account, exportedAt:new Date().toISOString(),
+            folders:list.map(folder => ({id:folder.id, name:folder.name, parentId:tree.get(folder.id).parentId}))};
+    }
+    function previewImport(data) {
+        const invalid = () => { throw new Error(text('transferInvalid')); };
+        if (!data || data.format !== 'thk-chat.folder-tree' || data.version !== 1 || typeof data.accountId !== 'string'
+            || !Array.isArray(data.folders) || data.folders.length > 5000) invalid();
+        if (!accountId() || !services().categories) throw new Error(text('unavailable'));
+        if (data.accountId !== accountId()) throw new Error(text('transferAccount'));
+        const imported = new Map();
+        const validId = id => typeof id === 'string' && id.length > 0 && id.length <= 128 && !['__proto__','constructor','prototype'].includes(id);
+        for (const folder of data.folders) {
+            if (!folder || !validId(folder.id) || typeof folder.parentId !== 'string'
+                || folder.parentId !== '' && !validId(folder.parentId) || imported.has(folder.id)) invalid();
+            imported.set(folder.id, folder.parentId);
+        }
+        for (const parent of imported.values()) if (parent && !imported.has(parent)) invalid();
+        const validate = graph => {
+            for (const id of graph.keys()) {
+                const seen = new Set(); let next = id;
+                while (next && graph.has(next)) {
+                    if (seen.has(next) || seen.size >= 100) throw new Error(text('transferCycle'));
+                    seen.add(next); next = graph.get(next);
+                }
+            }
+        };
+        validate(imported);
+        const list = categories(), existing = new Set(list.map(folder => folder.id));
+        const current = readParents(), parents = {...current};
+        let count = 0, skipped = 0, changes = 0;
+        for (const [id, parent] of imported) {
+            // Devices can have a newer category list than the exported snapshot.
+            if (!existing.has(id) || parent && !existing.has(parent)) { skipped++; continue; }
+            if ((current[id] || '') !== parent) changes++;
+            if (parent) parents[id] = parent; else delete parents[id];
+            count++;
+        }
+        // A valid file can still create a cycle through a device-only branch.
+        validate(new Map(list.map(folder => [folder.id, String(parents[folder.id] || '')])));
+        return {parents, count, skipped, changes};
+    }
+    function importTree(data) {
+        const result = previewImport(data);
+        // One local write after all validation: server category memberships stay intact.
+        writeParents(result.parents);
+        mount();
+        return {count:result.count, skipped:result.skipped, changes:result.changes};
     }
     function readParents() {
         try { const result = JSON.parse(localStorage.getItem(storageKey()) || '{}'); return result && typeof result === 'object' && !Array.isArray(result) ? result : {}; }
@@ -208,15 +274,82 @@
         const labels = [...header.querySelectorAll('div, span')].filter(element => !element.closest('.thk-native-folder-tools'));
         return list.find(category => labels.some(label => label.textContent.trim() === category.name))?.id || '';
     }
-    function clearState(header, state) {
-        state.tools.remove(); header.classList.remove('thk-native-folder-heading');
-        header.removeAttribute('data-thk-native-folder-id'); header.removeAttribute('data-thk-folder-hidden');
-        header.style.removeProperty('--thk-folder-depth'); header.style.order = state.order;
+    // Keep React's DOM intact. CSS order follows the API within each branch,
+    // with every child branch before the parent's own room list.
+    function folderLayout(tree) {
+        const result = [];
+        let order = 0;
+        function visit(folder, depth, ancestors) {
+            const entry = {...folder, depth, ancestors, headerOrder:order++, descendantRooms:new Set()};
+            result.push(entry);
+            for (const child of folder.children) {
+                const nested = visit(child, depth + 1, [...ancestors, folder.id]);
+                child.rooms.forEach(id => entry.descendantRooms.add(id));
+                nested.descendantRooms.forEach(id => entry.descendantRooms.add(id));
+            }
+            entry.roomsOrder = order++;
+            return entry;
+        }
+        tree.forEach(folder => visit(folder, 0, []));
+        return result;
+    }
+    function roomId(row) {
+        const link = row.matches('a[href]') ? row : row.querySelector('a[href*="rid"]');
+        const match = link?.getAttribute('href')?.match(/(?:#!rid|[?&]rid=)(\d+)/);
+        const marked = row.matches('[data-rid], [data-room-id]') ? row : row.querySelector('[data-rid], [data-room-id]');
+        const explicit = marked?.getAttribute('data-rid') || marked?.getAttribute('data-room-id') || match?.[1];
+        if (explicit) return String(explicit);
+        let fiber = row[Object.keys(row).find(key => key.startsWith('__reactFiber$'))];
+        for (let depth = 0; fiber && depth < 8; depth++, fiber = fiber.return) {
+            const props = fiber.memoizedProps;
+            const id = value(props?.room?.identity ?? props?.room?.id ?? props?.roomId ?? props?.rid);
+            if (id !== undefined && id !== null) return String(id);
+        }
+        return '';
+    }
+    function clearRooms(state) {
+        for (const [row, order] of state.rows) {
+            row.removeAttribute('data-thk-folder-room-hidden'); row.style.order = order;
+        }
+        state.rows.clear();
         if (state.rooms) {
             state.rooms.classList.remove('thk-native-folder-rooms'); state.rooms.removeAttribute('data-thk-folder-hidden');
             state.rooms.style.removeProperty('--thk-folder-depth'); state.rooms.style.order = state.roomsOrder;
         }
     }
+    function clearState(header, state) {
+        state.tools.remove(); header.classList.remove('thk-native-folder-heading');
+        header.removeAttribute('data-thk-native-folder-id'); header.removeAttribute('data-thk-folder-hidden');
+        header.style.removeProperty('--thk-folder-depth'); header.style.order = state.order;
+        clearRooms(state);
+    }
+    let categoryMenu = null;
+    function closeCategoryMenu() {
+        for (const state of managed.values()) state.tools.remove();
+        categoryMenu = null;
+    }
+    function mountCategoryMenu() {
+        if (!categoryMenu) return;
+        const {trigger, header, owner} = categoryMenu;
+        const state = managed.get(header);
+        if (!trigger.isConnected || !state || owner !== storageKey()) { closeCategoryMenu(); return; }
+        const controlled = document.getElementById(trigger.getAttribute('aria-controls') || '');
+        const visible = element => element && element.getClientRects().length && !element.closest('[hidden], [aria-hidden="true"]');
+        const menu = visible(controlled) ? controlled : [...document.querySelectorAll('[role="menu"]')].find(element => visible(element));
+        if (!menu) { state.tools.remove(); return; }
+        if (state.tools.parentElement !== menu) menu.appendChild(state.tools);
+    }
+    document.addEventListener('click', event => {
+        if (event.target.closest?.('.thk-native-folder-tools')) return;
+        const trigger = event.target.closest?.('button, [role="button"]');
+        const header = trigger?.closest('[data-thk-native-folder-id]');
+        const label = (trigger?.getAttribute('aria-label') || '') + ' ' + (trigger?.getAttribute('title') || '');
+        if (header && trigger !== header && (/menu|メニュー/i.test(label) || /^(menu|true)$/.test(trigger.getAttribute('aria-haspopup') || ''))) {
+            closeCategoryMenu();
+            categoryMenu = {trigger, header, owner:storageKey()};
+        } else if (!event.target.closest?.('[role="menu"]')) closeCategoryMenu();
+    }, true);
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeCategoryMenu(); }, true);
     function mount() {
         // Remove the former standalone widget, including its layout overrides.
         document.getElementById('thk-room-tree-panel')?.remove(); document.getElementById('thk-room-tree-actions')?.remove();
@@ -224,60 +357,70 @@
             document.querySelectorAll('.' + className).forEach(element => element.classList.remove(className));
         }
         const host = document.querySelector('#_roomListArea.roomListWithSwitch, #roomListWithSwitch, .roomListWithSwitch, [class*="roomListWithSwitch"]');
-        const list = categories(), layout = flatten(buildTree(list, readParents()));
+        const list = categories(), layout = folderLayout(buildTree(list, readParents()));
         const native = new Map();
         host?.querySelectorAll('[role="button"][aria-expanded]').forEach(header => {
+            if (header.parentElement?.closest('[role="button"][aria-expanded]')) return;
             const id = headerCategoryId(header, list); if (id) native.set(id, header);
         });
         const active = new Set(), activeContainers = new Set();
-        for (const [index, folder] of layout.entries()) {
+        for (const folder of layout) {
             const header = native.get(folder.id); if (!header) continue;
             active.add(header); activeContainers.add(header.parentElement);
             let state = managed.get(header);
             if (state && state.id !== folder.id) { clearState(header, state); managed.delete(header); state = null; }
             if (!state) {
-                const tools = node('span', 'thk-native-folder-tools'); tools.setAttribute('role', 'group');
+                const tools = node('div', 'thk-native-folder-tools'); tools.setAttribute('role', 'group');
                 tools.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
-                tools.addEventListener('keydown', event => event.stopPropagation());
-                for (const [content, mode] of [['+', 'child'], ['↳', 'parent'], ['⚡', 'auto']]) {
-                    const control = node('button', 'thk-native-folder-option', content); control.type = 'button';
-                    control.setAttribute('data-thk-folder-action', mode);
-                    control.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); if (mode === 'auto') window.__thkFolderAuto?.open(folder.id); else openEditor(folder.id, mode === 'child'); });
+                for (const mode of ['child', 'parent']) {
+                    const control = node('button', 'thk-native-folder-option'); control.type = 'button';
+                    control.setAttribute('role', 'menuitem'); control.setAttribute('data-thk-folder-action', mode);
+                    control.addEventListener('click', event => {
+                        event.preventDefault(); event.stopPropagation();
+                        const trigger = categoryMenu?.trigger;
+                        trigger?.click(); closeCategoryMenu();
+                        openEditor(folder.id, mode === 'child');
+                    });
                     tools.appendChild(control);
                 }
-                state = {id:folder.id, tools, order:header.style.order || '', rooms:null, roomsOrder:''}; managed.set(header, state);
+                state = {id:folder.id, tools, order:header.style.order || '', rooms:null, roomsOrder:'', rows:new Map()}; managed.set(header, state);
             }
-            if (state.tools.parentElement !== header) header.appendChild(state.tools);
             [...state.tools.children].forEach((control, position) => {
-                const label = text(position === 0 ? 'child' : position === 1 ? 'parent' : 'auto');
-                if (control.title !== label) control.title = label;
+                const label = text(position === 0 ? 'child' : 'parent');
+                const content = position === 0 ? label : '↳ ' + label;
+                if (control.textContent !== content) control.textContent = content;
                 if (control.getAttribute('aria-label') !== label) control.setAttribute('aria-label', label);
-                control.disabled = position === 0 && (!services().api?.add || !services().filters?.refreshCategory) || position === 2 && !window.__thkFolderAuto;
+                control.disabled = position === 0 && (!services().api?.add || !services().filters?.refreshCategory);
             });
-            let hidden = false, parent = folder.parentId; const seen = new Set();
-            while (parent && !seen.has(parent)) {
-                seen.add(parent);
-                if (native.get(parent)?.getAttribute('aria-expanded') === 'false') hidden = true;
-                parent = layout.find(candidate => candidate.id === parent)?.parentId;
-            }
+            const hidden = folder.ancestors.some(id => native.get(id)?.getAttribute('aria-expanded') === 'false');
             header.classList.add('thk-native-folder-heading'); header.setAttribute('data-thk-native-folder-id', folder.id);
             header.setAttribute('data-thk-folder-hidden', String(hidden)); header.style.setProperty('--thk-folder-depth', String(folder.depth));
-            header.style.order = String(index * 2);
+            header.style.order = String(folder.headerOrder);
             const rooms = header.nextElementSibling?.tagName === 'UL' ? header.nextElementSibling : null;
             if (state.rooms !== rooms) {
-                if (state.rooms) { state.rooms.classList.remove('thk-native-folder-rooms'); state.rooms.removeAttribute('data-thk-folder-hidden'); state.rooms.style.order = state.roomsOrder; state.rooms.style.removeProperty('--thk-folder-depth'); }
-                state.rooms = rooms; state.roomsOrder = rooms?.style.order || '';
+                clearRooms(state); state.rooms = rooms; state.roomsOrder = rooms?.style.order || '';
             }
             if (rooms) {
-                rooms.classList.add('thk-native-folder-rooms'); rooms.setAttribute('data-thk-folder-hidden', String(hidden));
-                rooms.style.setProperty('--thk-folder-depth', String(folder.depth)); rooms.style.order = String(index * 2 + 1);
+                rooms.classList.add('thk-native-folder-rooms'); rooms.setAttribute('data-thk-folder-hidden', String(hidden || header.getAttribute('aria-expanded') === 'false'));
+                rooms.style.setProperty('--thk-folder-depth', String(folder.depth)); rooms.style.order = String(folder.roomsOrder);
+                const order = new Map(folder.rooms.map((id, index) => [id, index]));
+                const rows = new Set(rooms.children);
+                for (const [row, originalOrder] of state.rows) if (!rows.has(row)) {
+                    row.removeAttribute('data-thk-folder-room-hidden'); row.style.order = originalOrder; state.rows.delete(row);
+                }
+                for (const row of rows) {
+                    if (!state.rows.has(row)) state.rows.set(row, row.style.order || '');
+                    const id = roomId(row);
+                    row.style.order = String(order.get(id) ?? order.size);
+                    row.setAttribute('data-thk-folder-room-hidden', String(folder.descendantRooms.has(id)));
+                }
             }
         }
         for (const [header, state] of managed) if (!active.has(header)) { clearState(header, state); managed.delete(header); }
         for (const container of containers) if (!activeContainers.has(container)) { container.classList.remove('thk-native-folder-list'); containers.delete(container); }
         for (const container of activeContainers) { container.classList.add('thk-native-folder-list'); containers.add(container); }
-        window.__thkFolderAuto?.mount();
+        mountCategoryMenu();
     }
-    window.__thkRoomFolders = {mount, getTree, openEditor, reparent, saveCategory, buildTree};
+    window.__thkRoomFolders = {mount, getTree, openEditor, reparent, saveCategory, buildTree, exportTree, previewImport, importTree};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })();

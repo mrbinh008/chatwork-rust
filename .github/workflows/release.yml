@@ -47,15 +47,9 @@ jobs:
         run: |
           version=$(awk -F '"' '/^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
           if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then echo 'Git tag and Cargo version must match'; exit 1; fi
-          node examples/toolkit-regression.cjs
-          node examples/native-folders-regression.cjs
-          node examples/room-directory-regression.cjs
-          node examples/folder-auto-regression.cjs
-          node examples/description-toolbar-regression.cjs
-          node examples/formatting-editors-regression.cjs
-          node examples/files-regression.cjs
-          node examples/downloads-regression.cjs
-          node examples/file-preview-regression.cjs
+          for check in toolkit room-directory native-folders folder-layout description-toolbar formatting-editors mention ui-render files downloads file-preview branding request-navigation; do
+            node "examples/$check-regression.cjs"
+          done
           bash build-mac.sh --universal
           node examples/mac-bundle-regression.cjs "dist/THK-Chat-v$version-macOS-Universal/THK-Chat.app"
       - uses: actions/upload-artifact@v4
@@ -84,11 +78,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes_file=".github/release-notes/$GITHUB_REF_NAME.md"
+          notes_args=(--generate-notes)
+          if [[ -f "$notes_file" ]]; then notes_args=(--notes-file "$notes_file"); fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists, uploading assets with --clobber..."
             gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
             gh release edit "$GITHUB_REF_NAME" --draft=false
           else
             echo "Creating release $GITHUB_REF_NAME..."
-            gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --title "THK-Chat $GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag "${notes_args[@]}" --title "THK-Chat $GITHUB_REF_NAME"
           fi

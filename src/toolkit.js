@@ -5,9 +5,9 @@
         en: { emoji:'Recent emoji', settings:'THK-Chat settings', pr:'Create Pull Request', close:'Close', insert:'Insert into chat', copy:'Copy', copied:'Copied', project:'Project', title:'Title', url:'Pull Request URL', description:'Description', language:'Language', recentCount:'Recent emoji count', recent:'Recent', common:'Emoji', missing:'Complete all fields and enter a valid http/https link.', leave:'Create leave request' },
         ja: { emoji:'最近の絵文字', settings:'THK-Chat設定', pr:'プルリクエスト作成', close:'閉じる', insert:'チャットに挿入', copy:'コピー', copied:'コピーしました', project:'プロジェクト', title:'タイトル', url:'プルリクエストURL', description:'変更内容', language:'言語', recentCount:'最近の絵文字の表示数', recent:'最近使用', common:'絵文字', missing:'すべての項目を入力し、有効なhttp/httpsリンクを指定してください。', leave:'休暇申請を作成' }
     };
-    Object.assign(translations.vi, { files:'Quản lý file', shortcuts:'Shortcut hiển thị trong nhóm', shortcutHint:'Ẩn/hiện nút trên thanh soạn tin và cấu hình phím tắt.', scope:'Áp dụng cho', allRooms:'Tất cả các nhóm', thisRoom:'Nhóm hiện tại', inherit:'Dùng thiết lập chung', updates:'Kiểm tra cập nhật app', info:'Info', infoTitle:'Info có tiêu đề', code:'Code', hr:'Đường kẻ', preview:'Xem trước', customKey:'Phím tắt', pressKey:'Bấm phím...', noKey:'Chưa gán', roomTree:'Cây thư mục phòng', addFolder:'+ Thư mục', autoGroup:'⚡ Tự động gom', folderName:'Tên thư mục', parentFolder:'Thư mục cha', rootFolder:'[Thư mục gốc]', selectRooms:'Chọn phòng đưa vào thư mục', save:'Lưu', delete:'Xóa', edit:'Sửa' });
-    Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons and configure shortcuts.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview', customKey:'Shortcut key', pressKey:'Press key...', noKey:'None', roomTree:'Room folders', addFolder:'+ Folder', autoGroup:'⚡ Auto group', folderName:'Folder name', parentFolder:'Parent folder', rootFolder:'[Root folder]', selectRooms:'Select rooms', save:'Save', delete:'Delete', edit:'Edit' });
-    Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'ツールバーボタンの表示とショートカットキーを設定します。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー', customKey:'ショートカット', pressKey:'キーを押してください...', noKey:'未設定', roomTree:'ルームフォルダ', addFolder:'+ フォルダ', autoGroup:'⚡ 自動グループ化', folderName:'フォルダ名', parentFolder:'親フォルダ', rootFolder:'[ルートフォルダ]', selectRooms:'ルームを選択', save:'保存', delete:'削除', edit:'編集' });
+    Object.assign(translations.vi, { files:'Quản lý file', shortcuts:'Shortcut hiển thị trong nhóm', shortcutHint:'Ẩn/hiện nút trên thanh soạn tin và cấu hình phím tắt.', scope:'Áp dụng cho', allRooms:'Tất cả các nhóm', thisRoom:'Nhóm hiện tại', inherit:'Dùng thiết lập chung', updates:'Kiểm tra cập nhật app', info:'Info', infoTitle:'Info có tiêu đề', code:'Code', hr:'Đường kẻ', preview:'Xem trước', customKey:'Phím tắt', pressKey:'Bấm phím...', noKey:'Chưa gán', roomTree:'Cây thư mục phòng', addFolder:'+ Thư mục', folderName:'Tên thư mục', parentFolder:'Thư mục cha', rootFolder:'[Thư mục gốc]', selectRooms:'Chọn phòng đưa vào thư mục', save:'Lưu', delete:'Xóa', edit:'Sửa' });
+    Object.assign(translations.en, { files:'Files', shortcuts:'Group toolbar shortcuts', shortcutHint:'Choose toolbar buttons and configure shortcuts.', scope:'Apply to', allRooms:'All groups', thisRoom:'This group', inherit:'Use global settings', updates:'Check for app updates', info:'Info', infoTitle:'Info with title', code:'Code', hr:'Divider', preview:'Preview', customKey:'Shortcut key', pressKey:'Press key...', noKey:'None', roomTree:'Room folders', addFolder:'+ Folder', folderName:'Folder name', parentFolder:'Parent folder', rootFolder:'[Root folder]', selectRooms:'Select rooms', save:'Save', delete:'Delete', edit:'Edit' });
+    Object.assign(translations.ja, { files:'ファイル管理', shortcuts:'グループのツールバー', shortcutHint:'ツールバーボタンの表示とショートカットキーを設定します。', scope:'適用範囲', allRooms:'すべてのグループ', thisRoom:'このグループ', inherit:'共通設定を使用', updates:'アプリの更新を確認', info:'Info', infoTitle:'タイトル付きInfo', code:'Code', hr:'区切り線', preview:'プレビュー', customKey:'ショートカット', pressKey:'キーを押してください...', noKey:'未設定', roomTree:'ルームフォルダ', addFolder:'+ フォルダ', folderName:'フォルダ名', parentFolder:'親フォルダ', rootFolder:'[ルートフォルダ]', selectRooms:'ルームを選択', save:'保存', delete:'削除', edit:'編集' });
     Object.assign(translations.vi, { addChildFolder:'+ Thư mục con', folderTreeHint:'Tạo thư mục cha, rồi bấm “+ Thư mục con” để nhóm các phòng theo từng nhánh.', folderParentMissing:'Thư mục cha không còn tồn tại. Hãy chọn lại thư mục cha.' });
     Object.assign(translations.en, { addChildFolder:'+ Subfolder', folderTreeHint:'Create a parent folder, then choose “+ Subfolder” to organize rooms into branches.', folderParentMissing:'The parent folder no longer exists. Choose another parent.' });
     Object.assign(translations.ja, { addChildFolder:'+ 子フォルダ', folderTreeHint:'親フォルダを作成し、「+ 子フォルダ」でルームを階層ごとに整理できます。', folderParentMissing:'親フォルダが見つかりません。別の親フォルダを選択してください。' });
@@ -250,6 +250,63 @@
         }, true);
     }
 
+    function folderTransferSettings(view) {
+        const folderAPI = window.__thkRoomFolders;
+        const section = element('section', 'thk-folder-transfer');
+        section.append(element('h3', 'thk-sec-title', t('folderSync')), element('p', 'thk-leave-hint', t('folderSyncHint')));
+        const status = element('p', 'thk-leave-hint'); status.setAttribute('role', 'status');
+        const actions = element('div', 'thk-folder-transfer-actions');
+        const fileInput = element('input'); fileInput.type = 'file'; fileInput.accept = '.json,application/json'; fileInput.hidden = true;
+        fileInput.setAttribute('aria-label', t('folderImport'));
+        let pending = null, sequence = 0;
+        const summary = result => t('folderImportPreview').replace('{count}', result.count).replace('{changes}', result.changes).replace('{skipped}', result.skipped);
+        const apply = button(t('folderApply'), () => {
+            if (!pending) return;
+            try {
+                const result = folderAPI.importTree(pending);
+                pending = null; apply.hidden = true;
+                status.textContent = t('folderImported') + ' ' + summary(result);
+            } catch (error) { status.textContent = error?.message || t('folderImportFailed'); }
+        }, 'thk-btn-primary');
+        apply.hidden = true;
+        const exportButton = button(t('folderExport'), () => {
+            try {
+                const data = folderAPI.exportTree();
+                const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
+                const filename = 'THK-Chat-folder-tree-' + new Date().toISOString().slice(0,10) + '.json';
+                try {
+                    if (window.__thk_startDownload) window.__thk_startDownload(url, filename);
+                    else {
+                        const link = element('a'); link.href = url; link.download = filename;
+                        link.setAttribute('data-thk-download-internal', 'true');
+                        document.body.appendChild(link); link.click(); link.remove();
+                    }
+                    status.textContent = t('folderExported');
+                } finally { setTimeout(() => URL.revokeObjectURL(url), 60000); }
+            } catch (error) { status.textContent = error?.message || t('folderImportFailed'); }
+        }, 'thk-btn-secondary');
+        const importButton = button(t('folderImport'), () => fileInput.click(), 'thk-btn-secondary');
+        exportButton.disabled = importButton.disabled = !folderAPI;
+        fileInput.addEventListener('change', async () => {
+            const file = fileInput.files?.[0], request = ++sequence;
+            pending = null; apply.hidden = true;
+            if (!file) return;
+            status.textContent = t('folderReading');
+            try {
+                if (file.size > 1_048_576) throw new Error(t('folderFileLarge'));
+                const content = await file.text();
+                if (!view.backdrop.isConnected || request !== sequence) return;
+                const data = JSON.parse(content.replace(/^\uFEFF/, ''));
+                const result = folderAPI.previewImport(data);
+                pending = data; apply.hidden = result.changes === 0;
+                status.textContent = (result.changes === 0 ? t('folderUnchanged') + ' ' : '') + summary(result);
+            } catch (error) {
+                if (view.backdrop.isConnected && request === sequence) status.textContent = error instanceof SyntaxError ? t('folderImportFailed') : error?.message || t('folderImportFailed');
+            } finally { if (request === sequence) fileInput.value = ''; }
+        });
+        actions.append(exportButton, importButton, apply);
+        section.append(actions, fileInput, status); view.body.appendChild(section);
+    }
     function openSettings() {
         const view = panel(t('settings'));
         const languageLabel = element('label', 'thk-toolkit-label', t('language'));
@@ -387,6 +444,7 @@
         scope.addEventListener('change', drawShortcuts);
         drawShortcuts();
 
+        folderTransferSettings(view);
         view.body.appendChild(element('h3','thk-sec-title','THK-Chat v__VERSION__'));
         view.body.appendChild(button(t('updates'), () => { view.close(); window.__thk_openUpdates?.(); }, 'thk-btn-secondary'));
     }
@@ -416,6 +474,9 @@
         }
     }
 
+    Object.assign(translations.vi, {folderSync:'Đồng bộ cây thư mục',folderSyncHint:'Xuất file JSON rồi nhập trên thiết bị khác cùng tài khoản Chatwork. Các thư mục ngoài file được giữ lại; phòng trong danh mục tiếp tục đồng bộ qua Chatwork.',folderExport:'Export cây thư mục',folderImport:'Import cây thư mục',folderApply:'Áp dụng cây thư mục',folderExported:'Đã tạo file cây thư mục.',folderImported:'Đã nhập cây thư mục.',folderImportPreview:'{count} danh mục · {changes} thay đổi · {skipped} bỏ qua vì danh mục chưa có.',folderImportFailed:'Không thể nhập/xuất cây thư mục. Vui lòng thử lại.',folderFileLarge:'File quá lớn. Vui lòng chọn file JSON dưới 1 MB.',folderReading:'Đang đọc file…',folderUnchanged:'Cây thư mục đã trùng khớp.'});
+    Object.assign(translations.en, {folderSync:'Sync folder tree',folderSyncHint:'Export JSON and import it on another device using the same Chatwork account. Folders outside the file are kept; category rooms continue to sync through Chatwork.',folderExport:'Export folder tree',folderImport:'Import folder tree',folderApply:'Apply folder tree',folderExported:'Folder tree file created.',folderImported:'Folder tree imported.',folderImportPreview:'{count} categories · {changes} changes · {skipped} skipped because categories are unavailable.',folderImportFailed:'Could not import/export the folder tree. Please try again.',folderFileLarge:'File is too large. Select a JSON file smaller than 1 MB.',folderReading:'Reading file…',folderUnchanged:'The folder tree already matches.'});
+    Object.assign(translations.ja, {folderSync:'フォルダツリーの同期',folderSyncHint:'同じChatworkアカウントの別の端末にJSONをエクスポート・インポートできます。ファイルにないフォルダは維持され、ルームはChatworkで同期されます。',folderExport:'ツリーをエクスポート',folderImport:'ツリーをインポート',folderApply:'ツリーを適用',folderExported:'ファイルを作成しました。',folderImported:'ツリーをインポートしました。',folderImportPreview:'{count}件 · {changes}件の変更 · 利用できない{skipped}件をスキップ',folderImportFailed:'ツリーのインポート・エクスポートに失敗しました。',folderFileLarge:'1 MB未満のJSONファイルを選択してください。',folderReading:'読み込み中…',folderUnchanged:'ツリーは既に一致しています。'});
     const labels = {
         '2. Ngày và thời gian nghỉ': ['2. Leave dates and times','2. 休暇の日付と時間'],
         'Mỗi dòng là một ngày kèm khoảng giờ nghỉ riêng.': ['Each row has its own date and time range.','各行で日付と休暇時間を個別に指定します。'],

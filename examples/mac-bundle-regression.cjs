@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.resolve(__dirname,'..');
 const bundle=path.resolve(process.argv[2] || '');
 assert.ok(process.argv[2] && bundle.endsWith('.app'),'Provide a built macOS app bundle');
-const scripts=['injected.js','toolkit.js','room-folders.js','folder-auto-group.js','downloads.js','files.js','file-preview.js','update-ui.js'];
+const scripts=['injected.js','toolkit.js','room-folders.js','downloads.js','files.js','file-preview.js','update-ui.js'];
 const text=file=>fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n');
 const swift=text(path.join(root,'mac/Native/main.swift'));
 const runtimeScripts=[...swift.match(/for file in \[([^\]]+)\]/)[1].matchAll(/"([^"]+)"/g)].map(match=>match[1]);

@@ -1,6 +1,6 @@
 [package]
 name = "chatwork-rs"
-version = "2.26.6"
+version = "2.26.7"
 repository = "https://github.com/mrbinh008/chatwork-rust"
 edition = "2021"
 description = "THK-Chat Desktop Client"
@@ -40,6 +40,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Target-specific: Windows
 [target.'cfg(windows)'.dependencies]
+winrt-notification = { version = "0.8", package = "tauri-winrt-notification" }
 windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",

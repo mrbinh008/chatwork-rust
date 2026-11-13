@@ -108,8 +108,18 @@ const leave=new UINode('button');leave.id='thkBtnLeaveRequest';toolbar.append(le
 const editor=new UINode('textarea');editor.id='_chatText';editor.value='Hello ';editor.setSelectionRange(6,6);
 uiDocument.body.append(toolbar,editor);editor.focus();
 const uiStore=new Map();
-const uiWindow={...window,addEventListener(){},removeEventListener(){}};
-const uiContext=vm.createContext({window:uiWindow,document:uiDocument,navigator:{language:'vi'},localStorage:{getItem:key=>uiStore.get(key)??null,setItem:(key,value)=>uiStore.set(key,value)},Intl,URL,Event:UIEvent,NodeFilter:{SHOW_TEXT:4},MutationObserver:class{observe(){}},setInterval(){},setTimeout(){},console});
+let transferBlob, transferDownloads=[], transferImports=[];
+const transferSnapshot={format:'thk-chat.folder-tree',version:1,accountId:'7',folders:[{id:'a',parentId:''}]};
+const uiWindow={...window,addEventListener(){},removeEventListener(){},
+    __thk_startDownload:(url,filename)=>transferDownloads.push({url,filename}),
+    __thkRoomFolders:{mount(){},getTree:()=>[],exportTree:()=>transferSnapshot,
+        previewImport:()=>({count:1,changes:1,skipped:0}),importTree:data=>{transferImports.push(data);return {count:1,changes:1,skipped:0};}}
+};
+class TransferURL extends URL {
+    static createObjectURL(blob){transferBlob=blob;return 'blob:folder-tree';}
+    static revokeObjectURL(){}
+}
+const uiContext=vm.createContext({window:uiWindow,document:uiDocument,navigator:{language:'vi'},localStorage:{getItem:key=>uiStore.get(key)??null,setItem:(key,value)=>uiStore.set(key,value)},Intl,URL:TransferURL,Blob,Event:UIEvent,NodeFilter:{SHOW_TEXT:4},MutationObserver:class{observe(){}},setInterval(){},setTimeout(){},console});
 vm.runInContext(source,uiContext);uiDocument.listeners.DOMContentLoaded.forEach(fn=>fn());
 assert.equal(toolbar.children.length,4,'All three Toolkit actions share existing toolbar');
 assert.equal(leave.hidden,false,'Leave button appears in attendance room');
@@ -127,7 +137,8 @@ assert.equal(scopeSelect.value, 'room', 'Default scope is current group');
 const firstShortcut=dialog.querySelector('input');firstShortcut.checked=false;firstShortcut.dispatchEvent(new UIEvent('change'));
 assert.equal(JSON.parse(uiStore.get('thk-toolkit.toolbar.room.7')).info,false);
 assert.equal(uiStore.has('thk-toolkit.toolbar'),false,'Changing group settings never writes a global configuration');
-assert.equal(dialog.querySelectorAll('input').length,8);
+assert.equal(dialog.querySelectorAll('input').filter(input=>input.type!=='file').length,8);
+assert.equal(dialog.querySelectorAll('input').filter(input=>input.type==='file').length,1,'Settings include a folder tree import control');
 assert.equal(uiDocument.getElementById('thkToolkit-emoji'),null);
 assert.equal(uiWindow.__thkToolkit.toolbarPreferences('7').info,false);
 assert.equal(uiWindow.__thkToolkit.toolbarPreferences('8').info,undefined,'Group settings do not apply to another group');
@@ -172,4 +183,27 @@ codeShortcutButton.remove();
 
 assert.ok(uiWindow.__thkToolkit.getAllRooms().length > 0);
 assert.equal(uiWindow.__thkToolkit.getRoomTree().length, 0, 'No standalone room tree is fabricated without native categories');
-console.log('Toolkit dialogs, toolbar visibility and shortcut checks passed.');
+(async()=>{
+    uiWindow.__thkToolkit.openSettings();
+    const section=uiDocument.getElementById('thk-toolkit-panel').querySelector('.thk-folder-transfer');
+    const [exportButton,importButton,applyButton]=section.querySelectorAll('button');
+    const input=section.querySelector('input');
+    assert.equal(exportButton.disabled,false);assert.equal(importButton.disabled,false);
+    exportButton.click();
+    assert.equal(transferDownloads.length,1);assert.ok(transferDownloads[0].filename.endsWith('.json'));
+    assert.deepEqual(JSON.parse(await transferBlob.text()),transferSnapshot,'Export downloads a portable JSON file');
+    input.files=[{size:100,text:async()=>JSON.stringify(transferSnapshot)}];
+    await input.listeners.change[0]();
+    assert.equal(applyButton.hidden,false,'Valid imports show an apply action after preview');
+    assert.equal(transferImports.length,0,'Selecting a file does not apply it immediately');
+    applyButton.click();assert.equal(transferImports.length,1);assert.equal(applyButton.hidden,true);
+    assert.equal(JSON.stringify(transferImports[0]),JSON.stringify(transferSnapshot));
+    input.files=[{size:2_000_000,text:async()=>assert.fail('Oversized files must not be read')}];
+    await input.listeners.change[0]();assert.equal(applyButton.hidden,true);assert.equal(transferImports.length,1);
+    input.files=[{size:20,text:async()=>'{invalid json'}];
+    await input.listeners.change[0]();assert.equal(applyButton.hidden,true);assert.equal(transferImports.length,1);
+    let resolveRead;input.files=[{size:100,text:()=>new Promise(resolve=>{resolveRead=resolve;})}];
+    const pendingRead=input.listeners.change[0]();uiWindow.__thkToolkit.close();resolveRead(JSON.stringify(transferSnapshot));
+    await pendingRead;assert.equal(applyButton.hidden,true,'Closing settings cancels a pending file preview');
+    console.log('Toolkit dialogs, toolbar, shortcuts and folder transfer UI checks passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

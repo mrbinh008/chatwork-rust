@@ -98,18 +98,35 @@
         notification.close = notification.cancel = function() {};
         notification.show = function() {};
         const target = getNotificationTarget(options);
-        let icon = notification.icon || options?.icon || options?.avatar || options?.image || '';
-        if (!icon && options?.data) {
-            const aid = options.data.account_id || options.data.aid || options.data.from_id;
-            if (aid && window.CW?.application) {
-                const user = window.CW.application.domainServiceContext?.userService?.userRepository?.entities?.[aid];
-                icon = user?.avatar?.value || user?.avatarUrl?.value || user?.avatar || '';
-            }
-        }
-        if (icon && typeof window.__thkToolkit?.resolveAvatarUrl === 'function') {
-            icon = window.__thkToolkit.resolveAvatarUrl(icon);
-        }
+        const icon = getNotificationAvatar(notification, options);
         window.__chatwork_ipc.notify(notification.title, notification.body, notification, target, icon);
+    }
+    function getNotificationAvatar(notification, options) {
+        const unwrap = input => input?.getValue?.() ?? input?.value ?? input;
+        const data = options?.data || {};
+        const sender = unwrap(data.account_id ?? data.accountId ?? data.from_id ?? data.sender_id ?? data.aid
+            ?? options?.account_id ?? options?.accountId ?? options?.sender_id);
+        const user = window.CW?.application?.domainServiceContext?.userService?.userRepository?.entities?.[sender];
+        // Prefer the sender's profile to an icon for the room or the application.
+        const candidates = [user?.profile?.profileImage, user?.avatarUrl, user?.avatar,
+            notification.icon, options?.icon, options?.avatar, options?.image];
+        if (sender && typeof window.AC?.getAvatar === 'function') {
+            try { candidates.splice(3, 0, window.AC.getAvatar(sender)); } catch (_) {}
+        }
+        for (let icon of candidates) {
+            for (let depth = 0; icon && typeof icon === 'object' && depth < 5; depth++) {
+                icon = unwrap(icon?.url ?? icon?.src ?? icon);
+            }
+            if (typeof icon !== 'string' || !icon.trim()) continue;
+            try {
+                if (window.__thkToolkit?.resolveAvatarUrl) icon = window.__thkToolkit.resolveAvatarUrl(icon);
+                else if (/^\/?avatar\//i.test(icon)) icon = new URL('/' + icon.replace(/^\//, ''), 'https://appdata.chatwork.com').href;
+                if (!icon) continue;
+                const url = new URL(icon, window.location.href);
+                if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+            } catch (_) {}
+        }
+        return '';
     }
     function getNotificationTarget(options) {
         if (!options || typeof options !== 'object') return null;

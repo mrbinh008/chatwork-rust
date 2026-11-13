@@ -10,7 +10,7 @@ const api = {
     async update(id, name, rooms) { calls.push(['update',id,name,rooms]); return {name:name.trim(),list:rooms}; }
 };
 const window = {__thkToolkit:{getLanguage:()=> 'vi'},CW:{application:{myId:{value:'7'},
-    domainServiceContext:{customCategoryService:{getSortedCategories:()=>Object.entries(records).map(([id,record])=>({identity:{value:id},name:{value:record.name},roomIds:record.list.map(value=>({value}))}))}},
+    domainServiceContext:{customCategoryService:{customCategoryRepository:{getAll:()=>Object.entries(records).map(([id,record])=>({identity:{value:id},name:{value:record.name},roomIds:record.list.map(value=>({value}))}))}}},
     applicationAPIServiceContext:{categoryAPIService:api},
     applicationServiceContext:{roomListFilterService:{refreshCategory(all){refreshes.push(all);records=all;}}}
 }}};
@@ -21,6 +21,13 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/room-folders.js'),'u
 const folders = window.__thkRoomFolders;
 const plain = value => JSON.parse(JSON.stringify(value));
 (async () => {
+    const service=window.CW.application.domainServiceContext.customCategoryService;
+    service.getSortedCategories=()=>{throw new Error('Alphabetical category sorting must not be called');};
+    assert.deepEqual(plain(folders.getTree().map(folder=>folder.id)),['a','b','c'],'Repository order is used even when names are not alphabetical');
+    const getAll=service.customCategoryRepository.getAll;
+    service.customCategoryRepository={entities:Object.fromEntries(getAll().map(category=>[category.identity.value,category]))};
+    assert.deepEqual(plain(folders.getTree().map(folder=>folder.id)),['a','b','c'],'Repository entities retain server order');
+    service.customCategoryRepository={getAll};
     assert.equal(folders.getTree().length,3,'Existing native categories are used directly');
     folders.reparent('b','a'); folders.reparent('c','b');
     let tree = folders.getTree();
@@ -60,9 +67,43 @@ const plain = value => JSON.parse(JSON.stringify(value));
     assert.equal(JSON.stringify(records),before);
     assert.equal(stored.get('thk-toolkit.nativeFolderParents.7'),parentsBefore);
     assert.equal(refreshes.length,countBefore,'Failed server saves never refresh or remove native categories');
+    const snapshot=plain(folders.exportTree());
+    assert.equal(snapshot.format,'thk-chat.folder-tree');assert.equal(snapshot.version,1);assert.equal(snapshot.accountId,'7');
+    assert.equal(snapshot.folders.find(folder=>folder.id==='new').parentId,'a');
+    assert.ok(snapshot.folders.every(folder=>!('rooms' in folder)),'Only folder structure is exported');
+    records.local={name:'Added on this device',list:['keep']};folders.reparent('local','a');
+    folders.reparent('new','b');
+    const previewBefore=stored.get('thk-toolkit.nativeFolderParents.7');
+    const preview=folders.previewImport(snapshot);assert.equal(preview.changes,1);
+    assert.equal(stored.get('thk-toolkit.nativeFolderParents.7'),previewBefore,'Preview does not change local storage');
+    const writesBefore=calls.length;
+    folders.importTree(snapshot);
+    assert.equal(folders.exportTree().folders.find(folder=>folder.id==='new').parentId,'a');
+    assert.equal(folders.exportTree().folders.find(folder=>folder.id==='local').parentId,'a','Device-only folders are preserved');
+    assert.equal(calls.length,writesBefore,'Tree imports do not change server categories or memberships');
+    assert.deepEqual(plain(records.local.list),['keep']);
+    assert.equal(folders.previewImport(snapshot).changes,0,'Importing the same tree is idempotent');
+    const importedBefore=stored.get('thk-toolkit.nativeFolderParents.7');
+    for(const bad of [
+        {...snapshot,accountId:'other'}, {...snapshot,version:2},
+        {...snapshot,folders:[...snapshot.folders,snapshot.folders[0]]},
+        {...snapshot,folders:[{id:'a',parentId:'b'},{id:'b',parentId:'a'}]},
+        {...snapshot,folders:[{id:'a',parentId:'missing'}]}
+    ]) {
+        assert.throws(()=>folders.importTree(bad));
+        assert.equal(stored.get('thk-toolkit.nativeFolderParents.7'),importedBefore,'Invalid imports are atomic');
+    }
+    const missing={...snapshot,folders:[...snapshot.folders,{id:'not-yet-synced',parentId:''}]};
+    assert.equal(folders.importTree(missing).skipped,1,'Unavailable server categories are reported and skipped');
+    folders.reparent('c','a');
+    const mixedCycle={...snapshot,folders:[{id:'a',parentId:'c'},{id:'c',parentId:'missing-parent'},{id:'missing-parent',parentId:''}]};
+    assert.throws(()=>folders.importTree(mixedCycle),'Imports cannot create cycles through preserved local relationships');
+    const beforeQuota=stored.get('thk-toolkit.nativeFolderParents.7');
     storage.setItem=()=>{throw new Error('Storage full');};
+    assert.throws(()=>folders.importTree(snapshot),/Storage full/);
+    assert.equal(stored.get('thk-toolkit.nativeFolderParents.7'),beforeQuota,'Failed imports leave the original tree intact');
     assert.throws(()=>folders.reparent('new','b'),/Storage full/);
-    assert.equal(stored.get('thk-toolkit.nativeFolderParents.7'),parentsBefore);
+    assert.equal(stored.get('thk-toolkit.nativeFolderParents.7'),beforeQuota);
     folders.mount();
-    console.log('Native category nesting, account isolation, API persistence, concurrent updates and failure handling checks passed.');
+    console.log('Native category nesting, account isolation, API persistence, tree import/export and failure handling checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

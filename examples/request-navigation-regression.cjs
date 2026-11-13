@@ -113,4 +113,22 @@ const callback = navContext.createChatworkNotification('icon', 'Title', 'Body');
 callback.onclick = () => window.__thk_navigateToMessage('#!rid33-333');
 window.__thk_notificationClicked(messages.at(-1).payload.id);
 assert.equal(location.hash, '#!rid33-333', 'NotificationAPI callback navigates to its original message');
-console.log('Leave request and message navigation regression checks passed.');
+// Sender avatars come from the user profile, independent of the active room.
+window.CW={application:{domainServiceContext:{userService:{userRepository:{entities:{
+    '101':{profile:{profileImage:{value:'avatar/sender-101.png'}}},
+    '202':{profile:{profileImage:{value:{url:'https://appdata.chatwork.com/avatar/sender-202.jpg'}}}}
+}}}}}};
+new navContext.NativeNotificationPolyfill('Sender 101',{icon:'https://www.chatwork.com/room.png',data:{account_id:'101',room_id:'11',message_id:'111'}});
+assert.equal(messages.at(-1).payload.icon,'https://appdata.chatwork.com/avatar/sender-101.png');
+new navContext.NativeNotificationPolyfill('Sender 202',{data:{sender_id:{value:'202'}}});
+assert.equal(messages.at(-1).payload.icon,'https://appdata.chatwork.com/avatar/sender-202.jpg','Wrapped profile images and sender IDs are resolved');
+navContext.createChatworkNotification('https://www.chatwork.com/room.png','Legacy','Body',{account_id:'101'});
+assert.equal(messages.at(-1).payload.icon,'https://appdata.chatwork.com/avatar/sender-101.png','Legacy NotificationAPI resolves the sender avatar too');
+new navContext.NativeNotificationPolyfill('Unknown sender',{icon:'https://appdata.chatwork.com/avatar/provided.png',data:{account_id:'missing'}});
+assert.equal(messages.at(-1).payload.icon,'https://appdata.chatwork.com/avatar/provided.png','Explicit avatars remain available without a profile');
+new navContext.NativeNotificationPolyfill('No avatar',{});
+assert.equal(messages.at(-1).payload.icon,null,'Missing avatars do not suppress a notification');
+window.__thkToolkit={resolveAvatarUrl:()=>''};
+new navContext.NativeNotificationPolyfill('Invalid avatar',{icon:'invalid'});
+assert.equal(messages.at(-1).payload.icon,null,'Rejected avatars do not resolve to the current chat page');
+console.log('Leave request, message navigation and sender avatar regression checks passed.');
