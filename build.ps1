@@ -50,8 +50,19 @@ try {
     $binary = Join-Path $ReleaseDir 'chatwork.exe'
     if (-not (Test-Path -LiteralPath $binary)) { throw 'Release executable missing' }
 
+    # Cargo may store build-script intermediates separately from final artifacts.
+    # Copy the locked loader explicitly into the directory we actually package.
     $loader = Join-Path $ReleaseDir 'WebView2Loader.dll'
-    if (-not (Test-Path -LiteralPath $loader)) { throw 'WebView2Loader.dll missing from release output' }
+    $lockText = Get-Content -LiteralPath (Join-Path $ProjectDir 'Cargo.lock') -Raw
+    $loaderVersion = ([regex]::Match($lockText, '(?m)^name = "webview2-com-sys"\r?\nversion = "([^"]+)"')).Groups[1].Value
+    if (-not $loaderVersion) { throw 'Locked WebView2 loader dependency missing' }
+    $cargoSourceHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
+    $loaderArch = if ($RustInfo -match '^host: aarch64-') { 'arm64' } elseif ($RustInfo -match '^host: i686-') { 'x86' } else { 'x64' }
+    $loaderPattern = Join-Path $cargoSourceHome "registry\src\*\webview2-com-sys-$loaderVersion\$loaderArch\WebView2Loader.dll"
+    $sourceLoader = Get-ChildItem -Path $loaderPattern -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $sourceLoader) { throw "WebView2Loader.dll missing from locked dependency webview2-com-sys $loaderVersion ($loaderArch)" }
+    Copy-Item -LiteralPath $sourceLoader.FullName -Destination $loader -Force
+    if ((Get-FileHash -LiteralPath $loader).Hash -ne (Get-FileHash -LiteralPath $sourceLoader.FullName).Hash) { throw 'Packaged WebView2 loader differs from locked dependency' }
     New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
     Copy-Item -LiteralPath $binary -Destination (Join-Path $PackageDir 'THK-Chat.exe') -Force
     Copy-Item -LiteralPath $loader -Destination $PackageDir -Force
