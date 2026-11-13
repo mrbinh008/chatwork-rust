@@ -74,7 +74,9 @@ sed -E '/<key>CFBundle(ShortVersionString|Version)<\/key>/{n;s#<string>[^<]*</st
 if [[ "$BACKEND" == swift ]]; then
   /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 12.0' "$APP_BUNDLE/Contents/Info.plist"
   cp src/ui.css src/injected.js src/toolkit.js src/room-folders.js src/downloads.js src/files.js src/file-preview.js src/update-ui.js \
-    assets/branding/icon.svg ota/macos-update.sh "$APP_BUNDLE/Contents/Resources/"
+    assets/branding/icon.svg assets/branding/icon-original.svg assets/branding/icon-signature.svg assets/branding/icon-dog.svg \
+    assets/thk.png assets/thk_signature.png assets/thk_dog.png \
+    ota/macos-update.sh "$APP_BUNDLE/Contents/Resources/"
   # Embed Swift compatibility libraries when the selected toolchain needs them.
   mkdir -p "$APP_BUNDLE/Contents/Frameworks"
   xcrun swift-stdlib-tool --copy --scan-executable "$APP_BUNDLE/Contents/MacOS/chatwork" \

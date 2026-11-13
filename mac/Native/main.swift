@@ -41,12 +41,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         do {
             let resources = Bundle.main.resourceURL!
             let css = try String(contentsOf: resources.appendingPathComponent("ui.css"), encoding: .utf8)
-            let brand = try String(contentsOf: resources.appendingPathComponent("icon.svg"), encoding: .utf8)
+            let brandOriginal = (try? String(contentsOf: resources.appendingPathComponent("icon-original.svg"), encoding: .utf8))
+                ?? (try? String(contentsOf: resources.appendingPathComponent("icon.svg"), encoding: .utf8)) ?? ""
+            let brandSignature = (try? String(contentsOf: resources.appendingPathComponent("icon-signature.svg"), encoding: .utf8)) ?? brandOriginal
+            let brandDog = (try? String(contentsOf: resources.appendingPathComponent("icon-dog.svg"), encoding: .utf8)) ?? brandOriginal
+
+            let brandIconsDict: [String: String] = [
+                "original": brandOriginal,
+                "thk-signature": brandSignature,
+                "dog": brandDog
+            ]
+            let brandIconsJsonData = (try? JSONSerialization.data(withJSONObject: brandIconsDict, options: [])) ?? Data()
+            let brandIconsJson = String(data: brandIconsJsonData, encoding: .utf8) ?? "{}"
+
+            let savedIconVariant = defaults.string(forKey: "native.appIcon") ?? "original"
+            let initialBrandSvg = brandIconsDict[savedIconVariant] ?? brandOriginal
+
             var script = """
             if (location.protocol === 'https:' && ['chatwork.com','kcw.kddi.ne.jp','kcw.kddi.com'].some(d => location.hostname === d || location.hostname.endsWith('.' + d))) {
             window.ipc = { postMessage: message => window.webkit.messageHandlers.native.postMessage(message) };
             window.__thk_ui_css = \(WebPolicy.scriptValue(css));
-            window.__thk_brand_icon_svg = \(WebPolicy.scriptValue(brand));
+            window.__thk_brand_icons = \(brandIconsJson);
+            window.__thk_brand_icon_variant = \(WebPolicy.scriptValue(savedIconVariant));
+            window.__thk_brand_icon_svg = \(WebPolicy.scriptValue(initialBrandSvg));
             """
             for file in ["injected.js", "toolkit.js", "room-folders.js", "downloads.js", "files.js", "file-preview.js", "update-ui.js"] {
                 script += "\n" + (try String(contentsOf: resources.appendingPathComponent(file), encoding: .utf8))
@@ -86,6 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
         let saved = defaults.string(forKey: "native.lastURL").flatMap(URL.init(string:))
         webView.load(URLRequest(url: saved.flatMap { WebPolicy.isChat($0) ? $0 : nil } ?? URL(string: "https://www.chatwork.com")!))
+        if savedIconVariant != "original" {
+            updateDockIcon(variant: savedIconVariant)
+        }
         showWindow()
         updater.start()
     }
@@ -162,6 +182,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc private func zoomIn() { setZoom(zoom + 0.1) }
     @objc private func zoomOut() { setZoom(zoom - 0.1) }
     @objc private func resetZoom() { setZoom(1) }
+    private func updateDockIcon(variant: String) {
+        let normalized = (variant == "thk-signature" || variant == "dog") ? variant : "original"
+        defaults.set(normalized, forKey: "native.appIcon")
+        let resources = Bundle.main.resourceURL
+        let iconName: String
+        switch normalized {
+        case "thk-signature": iconName = "thk_signature.png"
+        case "dog": iconName = "thk_dog.png"
+        default: iconName = "thk.png"
+        }
+        if let iconUrl = resources?.appendingPathComponent(iconName),
+           let image = NSImage(contentsOf: iconUrl) {
+            NSApp.applicationIconImage = image
+        } else if normalized == "original" {
+            NSApp.applicationIconImage = nil
+        }
+    }
     private func setZoom(_ value: Double) {
         zoom = min(1.5, max(0.5, (value * 10).rounded() / 10))
         defaults.set(zoom, forKey: "native.zoom")
@@ -197,6 +234,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             window.title = count > 0 ? "[\(count)] THK-Chat" : "THK-Chat"
         case "ShowNotification":
             if let payload = object["payload"] as? [String: Any] { notify(payload) }
+        case "SetAppIcon":
+            if let variant = object["payload"] as? String { updateDockIcon(variant: variant) }
         case "GoBack": webView.goBack()
         case "GoForward": webView.goForward()
         case "Reload": webView.reload()

@@ -3,9 +3,76 @@ use tracing::{info, warn};
 use tao::event_loop::EventLoopProxy;
 use crate::UserEvent;
 
+fn get_icon_paths_for_variant(variant: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let mut icon_path = std::env::current_exe().unwrap_or_default();
+    icon_path.pop();
+    let assets = icon_path.join("assets");
+    let lower = variant.to_ascii_lowercase();
+    if lower.contains("sig") {
+        (assets.join("thk_signature.ico"), assets.join("thk_signature.png"))
+    } else if lower.contains("dog") {
+        (assets.join("thk_dog.ico"), assets.join("thk_dog.png"))
+    } else {
+        (assets.join("thk.ico"), assets.join("thk.png"))
+    }
+}
+
+pub fn get_icon_string_for_variant(variant: &str) -> String {
+    let (ico, png) = get_icon_paths_for_variant(variant);
+    if png.exists() {
+        png.to_string_lossy().to_string()
+    } else if ico.exists() {
+        ico.to_string_lossy().to_string()
+    } else {
+        let mut icon_path = std::env::current_exe().unwrap_or_default();
+        icon_path.pop();
+        let fallback_ico = icon_path.join("assets").join("thk.ico");
+        let fallback_png = icon_path.join("assets").join("thk.png");
+        if fallback_png.exists() {
+            fallback_png.to_string_lossy().to_string()
+        } else if fallback_ico.exists() {
+            fallback_ico.to_string_lossy().to_string()
+        } else {
+            std::env::current_exe().unwrap_or_default().to_string_lossy().to_string()
+        }
+    }
+}
+
+pub fn update_app_icon_registry(variant: &str) {
+    #[cfg(windows)]
+    unsafe {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::System::Registry::*;
+
+        let subkey: Vec<u16> = OsStr::new("Software\\Classes\\AppUserModelId\\THK")
+            .encode_wide().chain(Some(0)).collect();
+        let mut hkey: HKEY = std::ptr::null_mut();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_WRITE, &mut hkey) == 0 && !hkey.is_null() {
+            let icon_str = get_icon_string_for_variant(variant);
+            let icon_uri: Vec<u16> = OsStr::new(&icon_str).encode_wide().chain(Some(0)).collect();
+            let icon_key: Vec<u16> = OsStr::new("IconUri").encode_wide().chain(Some(0)).collect();
+            let _ = RegSetValueExW(
+                hkey,
+                icon_key.as_ptr(),
+                0,
+                REG_SZ,
+                icon_uri.as_ptr() as *const u8,
+                (icon_uri.len() * 2) as u32,
+            );
+            let _ = RegCloseKey(hkey);
+            info!("Updated Windows notification registry IconUri for variant '{}' -> {}", variant, icon_str);
+        }
+    }
+}
+
 /// Register AppUserModelID so Windows Toast UI displays "THK" and the app icon
 #[allow(dead_code)]
 pub fn register_app_user_model_id() {
+    register_app_user_model_id_for_variant("original");
+}
+
+pub fn register_app_user_model_id_for_variant(variant: &str) {
     #[cfg(windows)]
     unsafe {
         use std::ffi::OsStr;
@@ -57,18 +124,7 @@ pub fn register_app_user_model_id() {
             );
 
             // IconUri
-            let mut icon_path = std::env::current_exe().unwrap_or_default();
-            icon_path.pop();
-            let ico = icon_path.join("assets").join("thk.ico");
-            let fallback_ico = icon_path.join("assets").join("chatwork.ico");
-            let icon_str = if ico.exists() {
-                ico.to_string_lossy().to_string()
-            } else if fallback_ico.exists() {
-                fallback_ico.to_string_lossy().to_string()
-            } else {
-                std::env::current_exe().unwrap_or_default().to_string_lossy().to_string()
-            };
-
+            let icon_str = get_icon_string_for_variant(variant);
             let icon_uri: Vec<u16> = OsStr::new(&icon_str)
                 .encode_wide()
                 .chain(Some(0))
@@ -114,8 +170,9 @@ pub fn show_notification(
     id: Option<String>,
     target: Option<String>,
     icon: Option<&str>,
+    app_icon: Option<&str>,
 ) {
-    info!("Notification: {} - {} (unread: {}, icon: {:?})", title, body, unread_count, icon);
+    info!("Notification: {} - {} (unread: {}, icon: {:?}, app_icon: {:?})", title, body, unread_count, icon, app_icon);
 
     let display_title = if title.trim().is_empty() {
         if unread_count > 0 {
@@ -131,7 +188,7 @@ pub fn show_notification(
     let safe_title: String = display_title.chars().take(100).collect();
     let safe_body: String = body.chars().take(500).collect();
 
-    let icon_to_use = resolve_notification_icon(icon);
+    let icon_to_use = resolve_notification_icon(icon, app_icon);
 
     #[cfg(windows)]
     {
@@ -212,7 +269,7 @@ pub fn show_notification(
     }
 }
 
-fn resolve_notification_icon(icon: Option<&str>) -> String {
+fn resolve_notification_icon(icon: Option<&str>, app_icon: Option<&str>) -> String {
     if let Some(ic) = icon {
         let trimmed = ic.trim();
         if !trimmed.is_empty() {
@@ -227,16 +284,21 @@ fn resolve_notification_icon(icon: Option<&str>) -> String {
         }
     }
 
-    let mut icon_path = std::env::current_exe().unwrap_or_default();
-    icon_path.pop();
-    let ico = icon_path.join("assets").join("thk.ico");
-    let fallback_ico = icon_path.join("assets").join("chatwork.ico");
-    if ico.exists() {
+    let variant = app_icon.unwrap_or("original");
+    let (ico, png) = get_icon_paths_for_variant(variant);
+    if png.exists() {
+        png.to_string_lossy().to_string()
+    } else if ico.exists() {
         ico.to_string_lossy().to_string()
-    } else if fallback_ico.exists() {
-        fallback_ico.to_string_lossy().to_string()
     } else {
-        String::new()
+        let mut icon_path = std::env::current_exe().unwrap_or_default();
+        icon_path.pop();
+        let fallback_ico = icon_path.join("assets").join("thk.ico");
+        if fallback_ico.exists() {
+            fallback_ico.to_string_lossy().to_string()
+        } else {
+            String::new()
+        }
     }
 }
 

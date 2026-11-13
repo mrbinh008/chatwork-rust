@@ -62,9 +62,13 @@ fn main() {
     #[cfg(windows)]
     ensure_webview2_env();
 
-    // Register AppUserModelId so Windows Toast displays "THK" & icon
+    // Load persisted config
+    let config = AppConfig::load();
+    let initial_icon_variant = normalize_icon_variant(config.app_icon.as_deref().unwrap_or("original"));
+
+    // Register AppUserModelId so Windows Toast displays "THK" & icon matching active variant
     #[cfg(windows)]
-    notification::register_app_user_model_id();
+    notification::register_app_user_model_id_for_variant(initial_icon_variant);
 
     // Initialize logging
     tracing_subscriber::fmt()
@@ -75,9 +79,6 @@ fn main() {
         .init();
 
     info!("Starting {} v{}", APP_NAME, APP_VERSION);
-
-    // Load persisted config
-    let config = AppConfig::load();
     info!("Config loaded: zoom={}, tabs={}", config.zoom_factor, config.tabs.len());
 
     // Create event loop
@@ -90,7 +91,6 @@ fn main() {
     eprintln!("[DEBUG 6] event_loop created");
 
     // ── Build main window ────────────────────────────────────────────────────
-    let initial_icon_variant = normalize_icon_variant(config.app_icon.as_deref().unwrap_or("original"));
     let wp = &config.window_params;
     let window = WindowBuilder::new()
         .with_title(APP_NAME)
@@ -495,10 +495,22 @@ fn handle_user_event(
             publish_update_status(updater, webview);
         }
         UserEvent::ShowNotification { title, body, id, target, icon } => {
-            let unread = state.lock().unwrap().unread_count;
+            let (unread, app_icon) = {
+                let s = state.lock().unwrap();
+                (s.unread_count, s.config.app_icon.clone())
+            };
             let notification_proxy = proxy.clone();
             std::thread::spawn(move || {
-                notification::show_notification(&title, &body, Some(notification_proxy), unread, id, target, icon.as_deref());
+                notification::show_notification(
+                    &title,
+                    &body,
+                    Some(notification_proxy),
+                    unread,
+                    id,
+                    target,
+                    icon.as_deref(),
+                    app_icon.as_deref(),
+                );
             });
             #[cfg(windows)]
             unsafe {
@@ -587,6 +599,8 @@ fn handle_user_event(
                 s.config.app_icon = Some(normalized.to_string());
             }
             save_config_now(state);
+            #[cfg(windows)]
+            notification::update_app_icon_registry(normalized);
             if let Some(w_icon) = load_icon_for_variant(normalized) {
                 window.set_window_icon(Some(w_icon));
             }

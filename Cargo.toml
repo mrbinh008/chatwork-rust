@@ -1,6 +1,6 @@
 [package]
 name = "chatwork-rs"
-version = "2.26.10"
+version = "2.26.11"
 repository = "https://github.com/mrbinh008/chatwork-rust"
 edition = "2021"
 description = "THK-Chat Desktop Client"
@@ -21,8 +21,8 @@ tray-icon = "0.26"
 # Native notifications
 notify-rust = "4"
 
-# Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -48,8 +48,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Registry",
 ] }
 
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
+
+
 
 # Target-specific: macOS
 [target.'cfg(target_os = "macos")'.dependencies]

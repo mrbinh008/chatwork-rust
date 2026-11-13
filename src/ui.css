@@ -316,3 +316,20 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
   .thk-app-icon-card { flex-direction:row; text-align:left; gap:12px; padding:8px 12px; }
   .thk-app-icon-preview { margin-bottom:0; flex:0 0 40px; width:40px; height:40px; }
 }
+
+/* ── Tree-mapped Category Reordering ── */
+.thk-folder-reorder-actions { margin-top:8px; margin-bottom:12px; }
+.thk-reorder-tree-list { display:flex; flex-direction:column; gap:6px; max-height:450px; overflow-y:auto; margin:12px 0; padding:6px; background:var(--thk-panel); border:1px solid var(--thk-border); border-radius:8px; }
+.thk-reorder-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; background:var(--thk-surface); border:1px solid var(--thk-border); border-radius:6px; transition:border-color .15s ease, background-color .15s ease; }
+.thk-reorder-row:hover { border-color:var(--thk-accent); }
+.thk-reorder-info { display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0; }
+.thk-reorder-branch { color:var(--thk-muted); font-weight:700; user-select:none; }
+.thk-reorder-icon { font-size:15px; line-height:1; user-select:none; }
+.thk-reorder-name { font-size:13px; color:var(--thk-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.thk-reorder-badge { font-size:11px; padding:2px 6px; border-radius:4px; background:var(--thk-tint); color:var(--thk-accent); white-space:nowrap; flex-shrink:0; }
+.thk-reorder-badge-root { background:rgba(128,128,128,.12); color:var(--thk-muted); }
+.thk-reorder-count { font-size:11px; color:var(--thk-muted); white-space:nowrap; flex-shrink:0; }
+.thk-reorder-controls { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+.thk-reorder-pos-wrap { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--thk-muted); }
+.thk-reorder-pos-input { width:46px; height:28px; padding:2px 4px; text-align:center; font:600 12px var(--thk-font); border:1px solid var(--thk-border); border-radius:4px; background:var(--thk-surface); color:var(--thk-text); }
+.thk-reorder-btn { padding:4px 8px; font-size:11px; min-width:48px; }

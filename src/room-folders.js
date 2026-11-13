@@ -59,9 +59,9 @@
     Object.assign(labels.vi, {all:'Tất cả',group:'Nhóm',direct:'Người dùng',mychat:'Chat của tôi',reload:'Tải lại',selectAll:'Chọn các mục đang lọc',clear:'Bỏ chọn',loading:'Đang cập nhật danh sách…',empty:'Không có mục phù hợp.',pending:'Chưa có phòng chat — mở cuộc trò chuyện trước khi thêm vào danh mục.',cached:'Chưa tải lại được; đang hiển thị dữ liệu hiện có.',selected:'đã chọn',items:'mục'});
     Object.assign(labels.en, {all:'All',group:'Groups',direct:'People',mychat:'My Chat',reload:'Refresh',selectAll:'Select filtered items',clear:'Clear selection',loading:'Refreshing directory…',empty:'No matching items.',pending:'No chat yet — open a conversation before adding it to a category.',cached:'Refresh failed; showing available data.',selected:'selected',items:'items'});
     Object.assign(labels.ja, {all:'すべて',group:'グループ',direct:'ユーザー',mychat:'マイチャット',reload:'再読み込み',selectAll:'絞り込みを選択',clear:'選択解除',loading:'一覧を更新中…',empty:'該当する項目はありません。',pending:'チャットを開始してからカテゴリに追加してください。',cached:'再読み込みできません。保存済みの一覧を表示しています。',selected:'選択',items:'件'});
-    Object.assign(labels.vi, {transferInvalid:'File cây thư mục không hợp lệ hoặc không được hỗ trợ.', transferAccount:'File này thuộc tài khoản Chatwork khác.', transferCycle:'Cây thư mục bị lặp hoặc có quá nhiều cấp.'});
-    Object.assign(labels.en, {transferInvalid:'Invalid or unsupported folder tree file.', transferAccount:'This file belongs to another Chatwork account.', transferCycle:'The folder tree contains a cycle or too many levels.'});
-    Object.assign(labels.ja, {transferInvalid:'フォルダツリーファイルが無効か未対応です。', transferAccount:'別のChatworkアカウントのファイルです。', transferCycle:'フォルダに循環参照があるか、階層が深すぎます。'});
+    Object.assign(labels.vi, {transferInvalid:'File cây thư mục không hợp lệ hoặc không được hỗ trợ.', transferAccount:'File này thuộc tài khoản Chatwork khác.', transferCycle:'Cây thư mục bị lặp hoặc có quá nhiều cấp.', reorder:'Sắp xếp lại danh mục', reorderHint:'Điều chỉnh vị trí và thứ tự các thư mục theo cây phân cấp hiện tại.', pos:'Vị trí', up:'▲ Lên', down:'▼ Xuống', saveOrder:'Lưu thứ tự', resetOrder:'Mặc định', roomsCount:'phòng', rootBadge:'Thư mục gốc', subfolderBadge:'Thư mục con'});
+    Object.assign(labels.en, {transferInvalid:'Invalid or unsupported folder tree file.', transferAccount:'This file belongs to another Chatwork account.', transferCycle:'The folder tree contains a cycle or too many levels.', reorder:'Reorder categories', reorderHint:'Adjust folder positions and order matching the current hierarchy.', pos:'Position', up:'▲ Up', down:'▼ Down', saveOrder:'Save order', resetOrder:'Reset', roomsCount:'rooms', rootBadge:'Root folder', subfolderBadge:'Subfolder'});
+    Object.assign(labels.ja, {transferInvalid:'フォルダツリーファイルが無効か未対応です。', transferAccount:'別のChatworkアカウントのファイルです。', transferCycle:'フォルダに循環参照があるか、階層が深すぎます。', reorder:'カテゴリーの並び替え', reorderHint:'現在のツリー構造に合わせてフォルダの表示順を調整します。', pos:'位置', up:'▲ 上へ', down:'▼ 下へ', saveOrder:'順序を保存', resetOrder:'初期順', roomsCount:'ルーム', rootBadge:'ルートフォルダ', subfolderBadge:'子フォルダ'});
     const value = object => object?.getValue?.() ?? object?.value ?? object;
     function services() {
         const app = window.CW?.application;
@@ -92,9 +92,10 @@
     function exportTree() {
         const account = accountId();
         if (!account || !services().categories) throw new Error(text('unavailable'));
-        const list = categories(), tree = new Map(flatten(buildTree(list, readParents())).map(folder => [folder.id, folder]));
+        const list = categories(), tree = new Map(flatten(buildTree(list, readParents(), readFolderOrder())).map(folder => [folder.id, folder]));
         return {format:'thk-chat.folder-tree', version:1, accountId:account, exportedAt:new Date().toISOString(),
-            folders:list.map(folder => ({id:folder.id, name:folder.name, parentId:tree.get(folder.id).parentId}))};
+            folders:list.map(folder => ({id:folder.id, name:folder.name, parentId:tree.get(folder.id).parentId})),
+            order:readFolderOrder()};
     }
     function previewImport(data) {
         const invalid = () => { throw new Error(text('transferInvalid')); };
@@ -138,15 +139,44 @@
         const result = previewImport(data);
         // One local write after all validation: server category memberships stay intact.
         writeParents(result.parents);
+        if (data && data.order && typeof data.order === 'object' && !Array.isArray(data.order)) {
+            writeFolderOrder(data.order);
+        }
         mount();
         return {count:result.count, skipped:result.skipped, changes:result.changes};
+    }
+    function orderStorageKey() {
+        return 'thk-toolkit.nativeFolderOrder.' + (accountId() || 'default');
+    }
+    function readFolderOrder() {
+        try { const result = JSON.parse(localStorage.getItem(orderStorageKey()) || '{}'); return result && typeof result === 'object' && !Array.isArray(result) ? result : {}; }
+        catch (_) { return {}; }
+    }
+    function writeFolderOrder(order) {
+        if (!order || typeof order !== 'object' || Object.keys(order).length === 0) {
+            if (typeof localStorage.removeItem === 'function') localStorage.removeItem(orderStorageKey());
+            else localStorage.setItem(orderStorageKey(), '{}');
+        } else {
+            localStorage.setItem(orderStorageKey(), JSON.stringify(order));
+        }
     }
     function readParents() {
         try { const result = JSON.parse(localStorage.getItem(storageKey()) || '{}'); return result && typeof result === 'object' && !Array.isArray(result) ? result : {}; }
         catch (_) { return {}; }
     }
     function writeParents(parents) { localStorage.setItem(storageKey(), JSON.stringify(parents)); }
-    function buildTree(list, parents) {
+    function sortSiblings(nodes, preferredIds) {
+        if (!Array.isArray(preferredIds) || preferredIds.length === 0) return nodes;
+        const rankMap = new Map();
+        preferredIds.forEach((id, idx) => rankMap.set(String(id), idx));
+        return [...nodes].sort((a, b) => {
+            const rankA = rankMap.has(a.id) ? rankMap.get(a.id) : 100000;
+            const rankB = rankMap.has(b.id) ? rankMap.get(b.id) : 100000;
+            if (rankA !== rankB) return rankA - rankB;
+            return 0;
+        });
+    }
+    function buildTree(list, parents, orderMap = readFolderOrder()) {
         const nodes = new Map(list.map(category => [category.id, {...category, parentId:'', children:[]}]));
         for (const node of nodes.values()) {
             const parent = String(parents[node.id] || '');
@@ -157,13 +187,21 @@
             }
             if (valid && nodes.has(parent)) node.parentId = parent;
         }
-        const roots = [];
+        let roots = [];
         for (const node of nodes.values()) {
             if (node.parentId) nodes.get(node.parentId).children.push(node); else roots.push(node);
         }
+        if (orderMap && typeof orderMap === 'object') {
+            roots = sortSiblings(roots, orderMap['']);
+            for (const node of nodes.values()) {
+                if (node.children.length > 1) {
+                    node.children = sortSiblings(node.children, orderMap[node.id]);
+                }
+            }
+        }
         return roots;
     }
-    function getTree() { return buildTree(categories(), readParents()); }
+    function getTree() { return buildTree(categories(), readParents(), readFolderOrder()); }
     function flatten(tree, depth = 0, prefix = '') {
         return tree.flatMap(node => [{...node, depth, path:prefix + node.name}, ...flatten(node.children, depth + 1, prefix + node.name + ' / ')]);
     }
@@ -309,6 +347,161 @@
             finally { save.disabled = false; }
         });
         view.footer.prepend(save); (name || parentSelect).focus();
+    }
+    function openReorderModal() {
+        const list = categories();
+        if (!list.length) return;
+        const parents = readParents();
+        let currentOrder = readFolderOrder();
+        const owner = storageKey();
+
+        const initialTree = buildTree(list, parents, currentOrder);
+        const orderState = {};
+        function syncOrderFromTree(treeNodes, parentId = '') {
+            orderState[parentId] = treeNodes.map(n => n.id);
+            for (const n of treeNodes) {
+                if (n.children && n.children.length) {
+                    syncOrderFromTree(n.children, n.id);
+                }
+            }
+        }
+        syncOrderFromTree(initialTree, '');
+
+        const view = window.__thkToolkit?.panel(text('reorder'));
+        if (!view) return;
+
+        view.body.appendChild(node('p', 'thk-leave-hint', text('reorderHint')));
+
+        const treeContainer = node('div', 'thk-reorder-tree-list');
+        view.body.appendChild(treeContainer);
+
+        const parentNameMap = new Map(list.map(c => [c.id, c.name]));
+
+        function renderList() {
+            treeContainer.replaceChildren();
+            const currentTree = buildTree(list, parents, orderState);
+
+            function renderNodes(nodes, depth = 0, parentId = '') {
+                const total = nodes.length;
+                nodes.forEach((folder, index) => {
+                    const row = node('div', 'thk-reorder-row');
+                    row.setAttribute('data-folder-id', folder.id);
+                    row.style.paddingLeft = (12 + depth * 24) + 'px';
+
+                    const info = node('div', 'thk-reorder-info');
+                    if (depth > 0) {
+                        const branch = node('span', 'thk-reorder-branch', '↳ ');
+                        info.appendChild(branch);
+                    }
+                    const icon = node('span', 'thk-reorder-icon', '📁');
+                    info.appendChild(icon);
+
+                    const name = node('strong', 'thk-reorder-name', folder.name);
+                    info.appendChild(name);
+
+                    if (depth > 0 && parentId) {
+                        const parentBadge = node('span', 'thk-reorder-badge', '↳ ' + (parentNameMap.get(parentId) || text('parent')));
+                        info.appendChild(parentBadge);
+                    } else {
+                        const rootBadge = node('span', 'thk-reorder-badge thk-reorder-badge-root', text('rootBadge'));
+                        info.appendChild(rootBadge);
+                    }
+
+                    const count = node('span', 'thk-reorder-count', `(${folder.rooms.length} ${text('roomsCount')})`);
+                    info.appendChild(count);
+
+                    row.appendChild(info);
+
+                    const controls = node('div', 'thk-reorder-controls');
+
+                    const posWrap = node('label', 'thk-reorder-pos-wrap');
+                    posWrap.appendChild(node('span', 'thk-reorder-pos-label', text('pos') + ': '));
+                    const posInput = node('input', 'thk-reorder-pos-input');
+                    posInput.type = 'number';
+                    posInput.min = '1';
+                    posInput.max = String(total);
+                    posInput.value = String(index + 1);
+                    posInput.setAttribute('aria-label', `${folder.name} ${text('pos')}`);
+                    posInput.addEventListener('change', () => {
+                        let target = parseInt(posInput.value, 10);
+                        if (isNaN(target)) { posInput.value = String(index + 1); return; }
+                        target = Math.max(1, Math.min(total, target));
+                        if (target === index + 1) return;
+                        const siblings = orderState[parentId] ? [...orderState[parentId]] : nodes.map(n => n.id);
+                        siblings.splice(index, 1);
+                        siblings.splice(target - 1, 0, folder.id);
+                        orderState[parentId] = siblings;
+                        renderList();
+                    });
+                    posWrap.appendChild(posInput);
+                    controls.appendChild(posWrap);
+
+                    const btnUp = node('button', 'thk-chip-btn thk-reorder-btn', text('up'));
+                    btnUp.type = 'button';
+                    btnUp.disabled = index === 0;
+                    btnUp.addEventListener('click', () => {
+                        if (index === 0) return;
+                        const siblings = orderState[parentId] ? [...orderState[parentId]] : nodes.map(n => n.id);
+                        const temp = siblings[index - 1];
+                        siblings[index - 1] = siblings[index];
+                        siblings[index] = temp;
+                        orderState[parentId] = siblings;
+                        renderList();
+                    });
+                    controls.appendChild(btnUp);
+
+                    const btnDown = node('button', 'thk-chip-btn thk-reorder-btn', text('down'));
+                    btnDown.type = 'button';
+                    btnDown.disabled = index === total - 1;
+                    btnDown.addEventListener('click', () => {
+                        if (index >= total - 1) return;
+                        const siblings = orderState[parentId] ? [...orderState[parentId]] : nodes.map(n => n.id);
+                        const temp = siblings[index + 1];
+                        siblings[index + 1] = siblings[index];
+                        siblings[index] = temp;
+                        orderState[parentId] = siblings;
+                        renderList();
+                    });
+                    controls.appendChild(btnDown);
+
+                    row.appendChild(controls);
+                    treeContainer.appendChild(row);
+
+                    if (folder.children && folder.children.length) {
+                        renderNodes(folder.children, depth + 1, folder.id);
+                    }
+                });
+            }
+
+            renderNodes(currentTree, 0, '');
+        }
+
+        renderList();
+
+        const status = node('p', 'thk-settings-status');
+        status.setAttribute('role', 'status');
+        view.body.appendChild(status);
+
+        const saveBtn = node('button', 'thk-btn-primary', text('saveOrder'));
+        saveBtn.type = 'button';
+        saveBtn.addEventListener('click', () => {
+            if (storageKey() !== owner) { status.textContent = text('stale'); return; }
+            writeFolderOrder(orderState);
+            mount();
+            view.close();
+        });
+
+        const resetBtn = node('button', 'thk-chip-btn', text('resetOrder'));
+        resetBtn.type = 'button';
+        resetBtn.addEventListener('click', () => {
+            if (storageKey() !== owner) { status.textContent = text('stale'); return; }
+            writeFolderOrder({});
+            mount();
+            view.close();
+        });
+
+        view.footer.prepend(resetBtn);
+        view.footer.prepend(saveBtn);
     }
     function headerCategoryId(header, list) {
         const explicit = header.getAttribute('data-category-id');
@@ -484,6 +677,25 @@
         } else if (!event.target.closest?.('[role="menu"]')) {
             closeCategoryMenu();
         }
+        // Intercept clicks on native Chatwork "Sắp xếp lại danh mục"
+        const reorderTrigger = event.target.closest?.('button, a, [role="menuitem"], li, div');
+        if (reorderTrigger && !reorderTrigger.closest?.('#thk-toolkit-panel, .thk-modal-box')) {
+            const txt = (reorderTrigger.textContent || '').trim().toLowerCase();
+            const aria = (reorderTrigger.getAttribute('aria-label') || '').toLowerCase();
+            if (
+                txt === 'sắp xếp lại danh mục' || aria === 'sắp xếp lại danh mục' ||
+                txt.includes('sắp xếp lại danh mục') ||
+                txt.includes('カテゴリーの並び替え') ||
+                txt === '並び替え' ||
+                txt.includes('reorder categories')
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeCategoryMenu();
+                openReorderModal();
+                return;
+            }
+        }
         // Immediate UI synchronization when expanding or collapsing folders
         if (trigger && (trigger === header || trigger.getAttribute?.('aria-expanded') !== null || trigger.matches?.('.thk-native-folder-heading'))) {
             if (typeof window.requestAnimationFrame === 'function') {
@@ -504,7 +716,7 @@
         }
         const host = document.querySelector('#_roomListArea.roomListWithSwitch, #roomListWithSwitch, .roomListWithSwitch, [class*="roomListWithSwitch"]');
         trackScrollHost(host);
-        const list = categories(), layout = folderLayout(buildTree(list, readParents()));
+        const list = categories(), layout = folderLayout(buildTree(list, readParents(), readFolderOrder()));
         const native = new Map();
         host?.querySelectorAll('[role="button"][aria-expanded]').forEach(header => {
             if (header.parentElement?.closest('[role="button"][aria-expanded]')) return;
@@ -562,6 +774,6 @@
         mountSharedRoomScroll(merge ? host : null, layout);
         mountCategoryMenu();
     }
-    window.__thkRoomFolders = {mount, scheduleMount, isScrolling, isMergeEnabled, setMergeEnabled, getTree, openEditor, reparent, saveCategory, buildTree, exportTree, previewImport, importTree};
+    window.__thkRoomFolders = {mount, scheduleMount, isScrolling, isMergeEnabled, setMergeEnabled, getTree, openEditor, openReorderModal, readFolderOrder, writeFolderOrder, reparent, saveCategory, buildTree, exportTree, previewImport, importTree};
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })();
