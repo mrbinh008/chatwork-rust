@@ -239,14 +239,47 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 
 /* Extend existing Chatwork category rows; keep native DOM and menus. */
 .thk-native-folder-list { display:flex!important; flex-direction:column!important; }
-.thk-native-folder-heading { display:flex!important; align-items:center; flex:0 0 auto; min-width:0; padding-left:calc(8px + var(--thk-folder-depth,0) * 14px)!important; }
+.thk-native-folder-heading {
+  display:flex!important; align-items:center; flex:0 0 auto; min-width:0;
+  padding-left:calc(8px + var(--thk-folder-depth,0) * 14px)!important;
+  cursor:pointer; user-select:none; border-radius:4px;
+  transition:background-color .15s ease, padding-left .15s ease;
+}
+.thk-native-folder-heading:hover {
+  background-color:var(--thk-tint, rgba(0,0,0,0.04));
+}
+.thk-native-folder-heading svg {
+  transition:transform .18s cubic-bezier(0.2, 0, 0, 1)!important;
+}
+.thk-native-folder-heading:not([style*="--thk-folder-depth: 0"]) {
+  position:relative;
+}
+.thk-native-folder-heading:not([style*="--thk-folder-depth: 0"])::before {
+  content:''; position:absolute; left:calc(6px + (var(--thk-folder-depth,1) - 1) * 14px);
+  top:0; bottom:0; width:1.5px; background:var(--thk-border, rgba(0,0,0,0.12)); opacity:0.6; pointer-events:none;
+}
 .thk-native-folder-heading > :first-child { flex:1 1 auto; min-width:0; }
 .thk-native-folder-tools { display:flex; flex-direction:column; gap:2px; padding:4px; border-top:1px solid var(--thk-border); }
 .thk-native-folder-tools .thk-native-folder-option { justify-content:flex-start; width:100%; height:auto; min-height:32px; padding:8px; text-align:left; white-space:nowrap; font-size:13px; }
 .thk-native-folder-option { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--thk-muted); cursor:pointer; font:600 14px/1 system-ui; }
 .thk-native-folder-option:hover { color:var(--thk-accent); background:var(--thk-tint); }
 .thk-native-folder-option:focus-visible { outline:2px solid var(--thk-accent); outline-offset:2px; }
-.thk-native-folder-rooms, .thk-native-root-rooms { display:flex!important; flex-direction:column; flex:0 0 auto; box-sizing:border-box; padding-left:calc(var(--thk-folder-depth,0) * 14px)!important; }
+.thk-native-folder-rooms, .thk-native-root-rooms {
+  display:flex!important; flex-direction:column; flex:0 0 auto; box-sizing:border-box;
+  padding-left:calc(var(--thk-folder-depth,0) * 14px)!important;
+  transition:opacity .15s ease;
+}
+.thk-native-folder-rooms:not([style*="--thk-folder-depth: 0"]) {
+  position:relative;
+}
+.thk-native-folder-rooms:not([style*="--thk-folder-depth: 0"])::before {
+  content:''; position:absolute; left:calc(6px + (var(--thk-folder-depth,1) - 1) * 14px);
+  top:0; bottom:0; width:1.5px; background:var(--thk-border, rgba(0,0,0,0.12)); opacity:0.6; pointer-events:none;
+}
+.thk-native-folder-rooms:empty,
+.thk-native-folder-rooms:not(:has(> :not([data-thk-folder-room-hidden="true"]):not([hidden]):not([style*="display: none"]))) {
+  display:none!important;
+}
 [data-thk-folder-hidden="true"], [data-thk-folder-room-hidden="true"] { display:none!important; }
 .thk-native-folder-room-choices { max-height:280px; overflow:auto; margin:8px 0; }
 #thk-toolkit-panel .thk-folder-directory-controls { display:flex; align-items:center; gap:8px; }

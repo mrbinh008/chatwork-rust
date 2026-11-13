@@ -55,7 +55,7 @@ for(const category of records) {
     trigger.addEventListener('click',()=>{menuOpen=!menuOpen;});
     host.appendChild(header);const list=lists[category.id]=new Element('ul');host.appendChild(list);
     rows[category.id]={};
-    for(const id of [...category.rooms].reverse()) {
+    for(const id of category.rooms) {
         const row=rows[category.id][id]=new Element('li');row.setAttribute('data-rid',id);list.appendChild(row);
     }
 }
@@ -72,36 +72,21 @@ const folders=window.__thkRoomFolders;
 folders.mount();
 const visualOrder = elements=>elements.sort((a,b)=>Number(a.style.order)-Number(b.style.order));
 assert.deepEqual(visualOrder([...host.children]),[headers.z,headers.b,headers.g,lists.g,lists.b,headers.a,lists.a,lists.z,headers.r,lists.r,headers.s,lists.s,uncategorizedHeading,uncategorized], 'API sibling order is preserved, with child branches before parent rooms');
-assert.deepEqual(visualOrder([...lists.z.children]).map(row=>row.getAttribute('data-rid')),['3','1','2','4'],'Room order follows the API instead of DOM order');
-const nativeRooms={
-    '71':{unreadNumber:{value:2}},
-    '72':{isSticky:{value:true},unreadNumber:{value:0}},
-    '73':{isPinned:()=>true,messageCountInfo:{unreadMessageCount:{value:5}}},
-    '75':{isPinned:{value:false},unreadNumber:{value:0}},
-    '5':{sticky:1}, '2':{unreadCount:1}, '81':{unreadNumber:{value:2}}, '82':{isPinned:true}
-};
-window.CW.application.domainServiceContext.roomService={roomRepository:{entities:nativeRooms}};
-window.RM={room_dat:{'74':{sticky:0,unread_num:3},'75':{sticky:1,unread_num:0}}};
+assert.deepEqual(visualOrder([...lists.z.children]).map(row=>row.getAttribute('data-rid')),['3','1','2','4'],'Room order follows the system sort order');
 rows.s['70'].removeAttribute('data-rid');rows.s['70'].id='70';
 const rankedIds=()=>visualOrder([...lists.s.children]).map(row=>Object.entries(rows.s).find(([,node])=>node===row)[0]);
 folders.mount();
-assert.deepEqual(rankedIds(),['73','72','71','74','70','75'],'Pinned rooms lead; unread rooms lead within each bucket; API order breaks ties');
+assert.deepEqual(rankedIds(),['70','71','72','73','74','75'],'Rooms follow system sort order');
 assert.ok(uncategorized.classList.contains('thk-native-root-rooms'),'Unclassified conversations join the folder room layout');
 assert.ok(Number(uncategorizedHeading.style.order)>Number(lists.s.style.order),'Unclassified heading follows the folders');
 assert.ok(Number(uncategorized.style.order)>Number(uncategorizedHeading.style.order));
-assert.deepEqual(visualOrder([...uncategorized.children]).filter(row=>row.getAttribute('data-thk-folder-room-hidden')!=='true').map(row=>row.getAttribute('data-rid')),['82','81','80'],'Unclassified chats share pin/unread priority below folders');
+assert.deepEqual(visualOrder([...uncategorized.children]).filter(row=>row.getAttribute('data-thk-folder-room-hidden')!=='true').map(row=>row.getAttribute('data-rid')),['80','81','82'],'Unclassified chats follow system sort order below folders');
 assert.equal(rootRows['70'].getAttribute('data-thk-folder-room-hidden'),'true','Categorized rooms are not repeated under unclassified conversations');
-assert.deepEqual(visualOrder([...lists.b.children]),[rows.b['5'],rows.b['2']],'Priorities also apply inside nested folders');
-nativeRooms['71'].unreadNumber.value=0;folders.mount();
-assert.deepEqual(rankedIds(),['73','72','74','70','71','75'],'Reading a chat restores its API position');
-nativeRooms['72'].isSticky.value=false;folders.mount();
-assert.deepEqual(rankedIds(),['73','74','70','71','72','75'],'Unpinning updates folder order');
-rows.s['75']['__reactFiber$test']={memoizedProps:{isPinned:true,roomId:'75'}};folders.mount();
-assert.deepEqual(rankedIds(),['73','75','74','70','71','72'],'Current rendered pin state overrides stale repository state');
-const badge=new Element('span');badge.className='roomBadge';badge.textContent='6';rows.s['70'].appendChild(badge);folders.mount();
-assert.deepEqual(rankedIds(),['73','75','70','74','71','72'],'Visible notification badges are supported without room metadata');
-badge.setAttribute('hidden','true');folders.mount();
-assert.deepEqual(rankedIds(),['73','75','74','70','71','72'],'Hidden notification badges do not raise read rooms');
+assert.deepEqual(visualOrder([...lists.b.children]),[rows.b['2'],rows.b['5']],'System sort applies inside nested folders');
+// System updates order in DOM (e.g. new message moves room 73 to top)
+lists.s.children = [rows.s['73'], rows.s['70'], rows.s['71'], rows.s['72'], rows.s['74'], rows.s['75']];
+folders.mount();
+assert.deepEqual(rankedIds(),['73','70','71','72','74','75'],'System sort updates in DOM are directly preserved');
 // Stable sidebar refreshes must neither invalidate layout nor measure row geometry.
 folders.mount();const writesBefore=domWrites,readsBefore=layoutReads;
 for(let i=0;i<20;i++)folders.mount();
@@ -113,10 +98,10 @@ clock=100;host.events.scroll();clock=180;timers.shift().callback();
 assert.equal(frames.length,0,'A continued gesture extends the deferral');
 clock=300;timers.shift().callback();assert.equal(frames.length,1);frames.shift()();
 assert.equal(domWrites,writesBefore,'Settling a scroll leaves unchanged rows untouched');
-clock=500;folders.scheduleMount();host.events.scroll();nativeRooms['71'].unreadNumber.value=5;frames.shift()();
-assert.equal(domWrites,writesBefore,'New notifications do not reorder rows while scrolling');
+clock=500;folders.scheduleMount();host.events.scroll();lists.s.children=[rows.s['71'],rows.s['73'],rows.s['70'],rows.s['72'],rows.s['74'],rows.s['75']];frames.shift()();
+assert.equal(domWrites,writesBefore,'DOM updates do not reorder rows while scrolling');
 clock=700;timers.shift().callback();frames.shift()();
-assert.deepEqual(rankedIds(),['73','75','71','74','70','72'],'Notification priority updates after scrolling settles');
+assert.deepEqual(rankedIds(),['71','73','70','72','74','75'],'System sort updates after scrolling settles');
 for(const id of ['1','2','3'])assert.equal(rows.z[id].getAttribute('data-thk-folder-room-hidden'),'true','Parent duplicates include rooms in grandchildren');
 assert.equal(rows.z['4'].getAttribute('data-thk-folder-room-hidden'),'false');
 assert.equal(rows.r['1'].getAttribute('data-thk-folder-room-hidden'),'false','Unrelated branches retain their own memberships');

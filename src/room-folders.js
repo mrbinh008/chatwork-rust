@@ -361,79 +361,16 @@
         }
         return '';
     }
-    function roomScalar(input) {
-        for (let depth = 0; input && typeof input === 'object' && depth < 5; depth++) {
-            const next = input.getValue?.() ?? input.value;
-            if (next === undefined || next === input) break;
-            input = next;
-        }
-        return input;
-    }
-    function roomField(record, key) {
-        try { return roomScalar(typeof record?.[key] === 'function' ? record[key]() : record?.[key]); }
-        catch (_) { return undefined; }
-    }
-    function roomPriority(row, id, entities) {
-        const sources = [];
-        let fiber = row[Object.keys(row).find(key => key.startsWith('__reactFiber$'))];
-        for (let depth = 0; fiber && depth < 6; depth++, fiber = fiber.return) {
-            if (fiber.memoizedProps) sources.push(fiber.memoizedProps, fiber.memoizedProps.room);
-        }
-        sources.push(entities.get(id), window.RM?.room_dat?.[id]);
-        const isOn = input => input === true || input === 'true' || Number(input) > 0;
-        let pinned;
-        for (const key of ['data-pinned', 'data-sticky']) {
-            const flag = row.getAttribute(key);
-            if (flag !== null) { pinned = isOn(flag); break; }
-        }
-        if (pinned === undefined) for (const source of sources) {
-            const flags = ['isPinned','isSticky','isPin','pinned','sticky','pin'].map(key => roomField(source, key));
-            const flag = flags.find(flag => ['boolean','number','string'].includes(typeof flag));
-            if (flag !== undefined) { pinned = isOn(flag); break; }
-        }
-        if (pinned === undefined) {
-            pinned = row.matches('.roomListItem--sticky, .roomListItem--pinned');
-            for (const control of row.querySelectorAll('[aria-label], [title]')) {
-                const label = ((control.getAttribute('aria-label') || '') + ' ' + (control.getAttribute('title') || '')).normalize('NFC');
-                if (/unpin|bỏ ghim|ピン.*解除|固定.*解除/i.test(label)
-                    || /pin|ghim|ピン|固定/i.test(label) && control.getAttribute('aria-pressed') === 'true') pinned = true;
-            }
-        }
-        let unread;
-        for (const source of sources) {
-            const counts = ['unreadNumber','unreadMessageCount','unreadCount','unread_num','mentionCount','mentionNumber','mention_num','hasUnread','hasMention']
-                .map(key => roomField(source, key));
-            const info = roomScalar(source?.messageCountInfo);
-            counts.push(roomField(info, 'unreadMessageCount'), roomField(info, 'mentionMessageCount'));
-            if (counts.some(count => ['boolean','number','string'].includes(typeof count))) { unread = counts.some(isOn); break; }
-        }
-        const visible = element => !element.hidden && element.style.display !== 'none' && !element.closest('[hidden], [aria-hidden="true"]');
-        const badges = unread === undefined ? row.querySelectorAll('.unread, .roomBadge, ._unreadBadge, [data-unread-count], [data-mention-count], [data-testid*="unread"], [data-testid*="badge"], ul > li') : [];
-        if ([...badges].some(badge => visible(badge) && (parseInt(badge.getAttribute('data-unread-count') ?? badge.getAttribute('data-mention-count') ?? badge.textContent, 10) > 0
-            || !badge.textContent.trim() && /unread/i.test(badge.getAttribute('data-testid') || '')))) unread = true;
-        return {pinned:!!pinned, unread:!!unread};
-    }
-    function nativeRoomMap() {
-        const repository = window.CW?.application?.domainServiceContext?.roomService?.roomRepository;
-        const entries = new Map(Object.entries(repository?.entities || {}));
-        for (const room of repository?.getAll?.() || []) {
-            const id = roomScalar(room.identity ?? room.id);
-            if (id !== undefined) entries.set(String(id), room);
-        }
-        return entries;
-    }
-    function layoutRoomRows(state, roomOrder, hiddenIds, entities) {
-        const order = new Map(roomOrder.map((id, index) => [id, index]));
+    function layoutRoomRows(state, roomOrder, hiddenIds) {
         const rows = new Set(state.rooms.children);
         for (const [row, originalOrder] of state.rows) if (!rows.has(row)) {
-            row.removeAttribute('data-thk-folder-room-hidden'); row.style.order = originalOrder; state.rows.delete(row);
+            row.removeAttribute('data-thk-folder-room-hidden');
+            if (row.style.order !== originalOrder) row.style.order = originalOrder;
+            state.rows.delete(row);
         }
-        const ranked = [...rows].map((row, index) => {
+        // Preserve Chatwork's system sort order (natural DOM order)
+        [...rows].forEach((row, index) => {
             const id = roomId(row);
-            return {row, id, index, apiOrder:order.get(id) ?? order.size, ...roomPriority(row, id, entities)};
-        }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(b.unread) - Number(a.unread)
-            || a.apiOrder - b.apiOrder || a.index - b.index);
-        ranked.forEach(({row, id}, index) => {
             if (!state.rows.has(row)) state.rows.set(row, row.style.order || '');
             folderOrder(row, index);
             folderAttr(row, 'data-thk-folder-room-hidden', hiddenIds.has(id));
@@ -443,7 +380,7 @@
         const label = (element?.textContent || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd');
         return /chua.*phan loai|uncategori[sz]ed|unclassified|未分類/i.test(label);
     }
-    function mountRootRooms(host, list, layout, entities) {
+    function mountRootRooms(host, list, layout) {
         const categorized = new Set(list.flatMap(folder => folder.rooms));
         const categoryLists = new Set([...managed.values()].map(state => state.rooms));
         const active = new Set(), headings = new Set();
@@ -458,7 +395,7 @@
                 state = {rooms, roomsOrder:rooms.style.order || '', rows:new Map()}; rootLists.set(rooms, state);
             }
             folderClass(rooms, 'thk-native-root-rooms'); folderOrder(rooms, rootOrder + active.size + 1);
-            layoutRoomRows(state, [...rooms.children].map(roomId), categorized, entities);
+            layoutRoomRows(state, [...rooms.children].map(roomId), categorized);
             // The native unclassified heading/separator share the folder flex flow.
             for (let heading = rooms.previousElementSibling; heading; heading = heading.previousElementSibling) {
                 if (!isUnclassifiedHeading(heading) && heading.getAttribute('role') !== 'separator') break;
@@ -544,7 +481,19 @@
         if (header && trigger !== header && (/menu|メニュー/i.test(label) || /^(menu|true)$/.test(trigger.getAttribute('aria-haspopup') || ''))) {
             closeCategoryMenu();
             categoryMenu = {trigger, header, owner:storageKey()};
-        } else if (!event.target.closest?.('[role="menu"]')) closeCategoryMenu();
+        } else if (!event.target.closest?.('[role="menu"]')) {
+            closeCategoryMenu();
+        }
+        // Immediate UI synchronization when expanding or collapsing folders
+        if (trigger && (trigger === header || trigger.getAttribute?.('aria-expanded') !== null || trigger.matches?.('.thk-native-folder-heading'))) {
+            if (typeof window.requestAnimationFrame === 'function') {
+                window.requestAnimationFrame(() => mount());
+            } else if (typeof setTimeout === 'function') {
+                setTimeout(() => mount(), 0);
+            } else {
+                mount();
+            }
+        }
     }, true);
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeCategoryMenu(); }, true);
     function mount() {
@@ -556,7 +505,7 @@
         const host = document.querySelector('#_roomListArea.roomListWithSwitch, #roomListWithSwitch, .roomListWithSwitch, [class*="roomListWithSwitch"]');
         trackScrollHost(host);
         const list = categories(), layout = folderLayout(buildTree(list, readParents()));
-        const native = new Map(), roomEntities = nativeRoomMap();
+        const native = new Map();
         host?.querySelectorAll('[role="button"][aria-expanded]').forEach(header => {
             if (header.parentElement?.closest('[role="button"][aria-expanded]')) return;
             const id = headerCategoryId(header, list); if (id) native.set(id, header);
@@ -602,14 +551,14 @@
             if (rooms) {
                 folderClass(rooms, 'thk-native-folder-rooms'); folderAttr(rooms, 'data-thk-folder-hidden', hidden || header.getAttribute('aria-expanded') === 'false');
                 folderStyle(rooms, '--thk-folder-depth', folder.depth); folderOrder(rooms, folder.roomsOrder);
-                layoutRoomRows(state, folder.rooms, folder.descendantRooms, roomEntities);
+                layoutRoomRows(state, folder.rooms, folder.descendantRooms);
             }
         }
         for (const [header, state] of managed) if (!active.has(header)) { clearState(header, state); managed.delete(header); }
         for (const container of containers) if (!activeContainers.has(container)) { container.classList.remove('thk-native-folder-list'); containers.delete(container); }
         for (const container of activeContainers) { folderClass(container, 'thk-native-folder-list'); containers.add(container); }
         const merge = isMergeEnabled();
-        mountRootRooms(merge ? host : null, list, layout, roomEntities);
+        mountRootRooms(merge ? host : null, list, layout);
         mountSharedRoomScroll(merge ? host : null, layout);
         mountCategoryMenu();
     }
