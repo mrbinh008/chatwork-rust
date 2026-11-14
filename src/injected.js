@@ -2487,7 +2487,261 @@
         });
     }
 
-    // ── 17. Periodic & Mutation Check to bind dynamic elements ───────────────
+    // ── 17. Text Selection Translation to Vietnamese ──────────────────────────
+    function initSelectionTranslator() {
+        if (window.__thkSelectionTranslatorLoaded) return;
+        window.__thkSelectionTranslatorLoaded = true;
+
+        let activePopover = null;
+        let activeBubble = null;
+        let selectionTimeout = null;
+
+        function removeBubble() {
+            if (activeBubble) {
+                activeBubble.remove();
+                activeBubble = null;
+            }
+        }
+
+        function closePopover() {
+            if (activePopover) {
+                activePopover.remove();
+                activePopover = null;
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        async function translateText(text, targetLang = 'vi') {
+            const trimmed = String(text || '').trim();
+            if (!trimmed) return null;
+            const query = trimmed.length > 4000 ? trimmed.substring(0, 4000) : trimmed;
+            const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(query);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Không thể kết nối đến máy chủ dịch thuật.');
+            const data = await res.json();
+            if (!Array.isArray(data?.[0])) throw new Error('Dữ liệu dịch không hợp lệ.');
+            const translated = data[0].map(s => s[0] || '').join('');
+            const detected = data[2] || 'auto';
+            return { original: trimmed, translated, detected };
+        }
+
+        function insertIntoChat(translated) {
+            const chatText = document.querySelector('#_chatText, #CurrentSelectedRoom textarea, #_chatSendArea textarea');
+            if (!chatText) return;
+            const snippet = `[info][title]Bản dịch (tiếng Việt)[/title]\n${translated}\n[/info]\n`;
+            const start = chatText.selectionStart || chatText.value.length;
+            const end = chatText.selectionEnd || chatText.value.length;
+            const val = chatText.value;
+            chatText.value = val.substring(0, start) + snippet + val.substring(end);
+            chatText.focus();
+            chatText.setSelectionRange(start + snippet.length, start + snippet.length);
+            chatText.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        async function showTranslationPopover(text, rect) {
+            closePopover();
+            removeBubble();
+
+            const popover = document.createElement('div');
+            popover.id = 'thk-translate-popover';
+            popover.className = 'thk-translate-popover';
+            popover.innerHTML = `
+                <div class="thk-translate-header">
+                    <span class="thk-translate-title">🌐 Dịch sang tiếng Việt</span>
+                    <button class="thk-translate-close" type="button" aria-label="Đóng">✕</button>
+                </div>
+                <div class="thk-translate-body">
+                    <div class="thk-translate-loading">
+                        <span class="thk-translate-spinner"></span> Đang dịch…
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(popover);
+            activePopover = popover;
+
+            const popWidth = Math.min(360, window.innerWidth - 30);
+            popover.style.width = popWidth + 'px';
+            const scrollY = window.scrollY || window.pageYOffset || 0;
+            const scrollX = window.scrollX || window.pageXOffset || 0;
+            let top = (rect ? rect.bottom : 200) + scrollY + 8;
+            let left = (rect ? rect.left + (rect.width / 2) : window.innerWidth / 2) + scrollX - (popWidth / 2);
+            left = Math.max(10, Math.min(window.innerWidth - popWidth - 10, left));
+            if (top + 180 > window.innerHeight + scrollY && rect) {
+                top = Math.max(scrollY + 10, rect.top + scrollY - 200);
+            }
+            popover.style.top = top + 'px';
+            popover.style.left = left + 'px';
+
+            popover.querySelector('.thk-translate-close')?.addEventListener('click', closePopover);
+
+            try {
+                const res = await translateText(text, 'vi');
+                if (!popover.isConnected || popover !== activePopover) return;
+                const langNames = { ja: 'Tiếng Nhật', en: 'Tiếng Anh', zh: 'Tiếng Trung', 'zh-CN': 'Tiếng Trung', ko: 'Tiếng Hàn', fr: 'Tiếng Pháp', de: 'Tiếng Đức', ru: 'Tiếng Nga' };
+                const langLabel = langNames[res.detected] || res.detected || 'Tự động';
+
+                const body = popover.querySelector('.thk-translate-body');
+                if (body) {
+                    body.innerHTML = `
+                        <div class="thk-translate-meta">Nguyên văn (${escapeHtml(langLabel)}):</div>
+                        <div class="thk-translate-orig">${escapeHtml(res.original.length > 120 ? res.original.slice(0, 120) + '…' : res.original)}</div>
+                        <div class="thk-translate-meta">Bản dịch tiếng Việt:</div>
+                        <div class="thk-translate-text">${escapeHtml(res.translated)}</div>
+                    `;
+                }
+
+                const footer = document.createElement('div');
+                footer.className = 'thk-translate-footer';
+
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'thk-chip-btn thk-translate-btn';
+                copyBtn.textContent = '📋 Sao chép';
+                copyBtn.addEventListener('click', () => {
+                    navigator.clipboard?.writeText(res.translated);
+                    copyBtn.textContent = '✓ Đã chép!';
+                    setTimeout(() => { if (copyBtn.isConnected) copyBtn.textContent = '📋 Sao chép'; }, 1500);
+                });
+                footer.appendChild(copyBtn);
+
+                const quoteBtn = document.createElement('button');
+                quoteBtn.type = 'button';
+                quoteBtn.className = 'thk-chip-btn thk-translate-btn';
+                quoteBtn.textContent = '💬 Trích dẫn vào ô chat';
+                quoteBtn.addEventListener('click', () => {
+                    insertIntoChat(res.translated);
+                    closePopover();
+                });
+                footer.appendChild(quoteBtn);
+
+                popover.appendChild(footer);
+            } catch (err) {
+                if (!popover.isConnected || popover !== activePopover) return;
+                const body = popover.querySelector('.thk-translate-body');
+                if (body) {
+                    body.innerHTML = `<div class="thk-translate-error">❌ ${escapeHtml(err.message || 'Lỗi khi dịch.')}</div>`;
+                }
+            }
+        }
+
+        function checkSelection() {
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+                removeBubble();
+                return;
+            }
+            const text = sel.toString().trim();
+            if (text.length < 2) {
+                removeBubble();
+                return;
+            }
+            const anchor = sel.anchorNode;
+            if (anchor && anchor.parentElement?.closest?.('#thk-translate-popover, .thk-translate-popover')) {
+                return;
+            }
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) {
+                removeBubble();
+                return;
+            }
+
+            // Check if Chatwork's native message selection tooltip exists in DOM
+            const nativePopup = document.querySelector('#_selectionArea, #_messageSelectionPopup, ._messageSelectionTooltip, [class*="selectionPopup"], [class*="SelectionPopup"], [class*="selectionTooltip"], [class*="selectionMenu"]');
+            if (nativePopup && nativePopup.isConnected) {
+                if (!nativePopup.querySelector('.thk-translate-selection-btn')) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'thk-translate-selection-btn';
+                    btn.innerHTML = '🌐 Dịch sang TV';
+                    btn.title = 'Dịch sang tiếng Việt';
+                    btn.setAttribute('aria-label', 'Dịch sang tiếng Việt');
+                    btn.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+                    btn.addEventListener('click', e => {
+                        e.preventDefault(); e.stopPropagation();
+                        showTranslationPopover(text, rect);
+                    });
+                    nativePopup.appendChild(btn);
+                }
+                removeBubble();
+                return;
+            }
+
+            // Show floating bubble next to the selection
+            let bubble = activeBubble;
+            if (!bubble) {
+                bubble = document.createElement('div');
+                bubble.id = 'thk-selection-translate-bubble';
+                bubble.className = 'thk-selection-translate-bubble';
+                bubble.innerHTML = '<span class="thk-translate-bubble-icon">🌐</span><span>Dịch sang TV</span>';
+                bubble.setAttribute('role', 'button');
+                bubble.setAttribute('tabindex', '0');
+                bubble.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+                bubble.addEventListener('click', e => {
+                    e.preventDefault(); e.stopPropagation();
+                    const currentSel = window.getSelection();
+                    const currentText = currentSel ? currentSel.toString().trim() : text;
+                    const currentRect = currentSel && currentSel.rangeCount > 0 ? currentSel.getRangeAt(0).getBoundingClientRect() : rect;
+                    removeBubble();
+                    showTranslationPopover(currentText || text, currentRect);
+                });
+                document.body.appendChild(bubble);
+                activeBubble = bubble;
+            }
+
+            const bubbleWidth = 114;
+            const bubbleHeight = 30;
+            const scrollY = window.scrollY || window.pageYOffset || 0;
+            const scrollX = window.scrollX || window.pageXOffset || 0;
+            let top = rect.top + scrollY - bubbleHeight - 6;
+            let left = rect.left + scrollX + (rect.width / 2) - (bubbleWidth / 2);
+            if (top < scrollY + 10) {
+                top = rect.bottom + scrollY + 6;
+            }
+            left = Math.max(10, Math.min(window.innerWidth - bubbleWidth - 10, left));
+            bubble.style.top = top + 'px';
+            bubble.style.left = left + 'px';
+            bubble.style.display = 'inline-flex';
+        }
+
+        document.addEventListener('mouseup', () => {
+            clearTimeout(selectionTimeout);
+            selectionTimeout = setTimeout(checkSelection, 80);
+        });
+
+        document.addEventListener('keyup', e => {
+            if (['Shift', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                clearTimeout(selectionTimeout);
+                selectionTimeout = setTimeout(checkSelection, 80);
+            }
+        });
+
+        document.addEventListener('mousedown', e => {
+            if (activePopover && !activePopover.contains(e.target)) {
+                closePopover();
+            }
+            if (activeBubble && !activeBubble.contains(e.target) && !e.target.closest?.('.thk-translate-selection-btn')) {
+                removeBubble();
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closePopover();
+                removeBubble();
+            }
+        });
+    }
+
+    // ── 18. Periodic & Mutation Check to bind dynamic elements ───────────────
     function initDynamicWatchers() {
         const update = () => {
             injectThkStyles(); setupQuickToolbar(); setupDescriptionToolbar(); attachCodeCopyButtons();
@@ -2508,9 +2762,13 @@
         setInterval(schedule, 1000);
     }
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initDynamicWatchers);
+        document.addEventListener('DOMContentLoaded', () => {
+            initDynamicWatchers();
+            initSelectionTranslator();
+        });
     } else {
         initDynamicWatchers();
+        initSelectionTranslator();
     }
 
     console.log('[THK Native Client] Fully initialized with Same-row Toolbar, Mention Dropdown, Markdown Preview & Leave Request Modal!');

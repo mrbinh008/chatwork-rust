@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             return
         }
         zoom = defaults.object(forKey: "native.zoom") as? Double ?? 1
+        let savedIconVariant = defaults.string(forKey: "native.appIcon") ?? "original"
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.applicationNameForUserAgent = "THK-Chat/\(version)"
@@ -54,7 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let brandIconsJsonData = (try? JSONSerialization.data(withJSONObject: brandIconsDict, options: [])) ?? Data()
             let brandIconsJson = String(data: brandIconsJsonData, encoding: .utf8) ?? "{}"
 
-            let savedIconVariant = defaults.string(forKey: "native.appIcon") ?? "original"
             let initialBrandSvg = brandIconsDict[savedIconVariant] ?? brandOriginal
 
             var script = """

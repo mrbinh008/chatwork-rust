@@ -273,6 +273,26 @@
         });
         parentSelect.value = createChild ? id : folder.parentId;
         parentLabel.appendChild(parentSelect); view.body.appendChild(parentLabel);
+        const posLabel = node('label', 'thk-toolkit-label', text('pos'));
+        const posInput = node('input', 'thk-input-field');
+        posInput.type = 'number'; posInput.min = '1';
+        function updatePosRange() {
+            const currentP = parentSelect.value;
+            const currentTree = buildTree(categories(), readParents(), readFolderOrder());
+            let siblings = [];
+            if (!currentP) {
+                siblings = currentTree;
+            } else {
+                const parentNode = flatten(currentTree).find(f => f.id === currentP);
+                siblings = parentNode?.children || [];
+            }
+            const currentIdx = siblings.findIndex(s => s.id === (createChild ? '' : id));
+            posInput.max = String(createChild ? siblings.length + 1 : Math.max(1, siblings.length));
+            posInput.value = String(currentIdx >= 0 ? currentIdx + 1 : (createChild ? siblings.length + 1 : 1));
+        }
+        parentSelect.addEventListener('change', updatePosRange);
+        updatePosRange();
+        posLabel.appendChild(posInput); view.body.appendChild(posLabel);
         const selectedRooms = new Set();
         if (createChild) {
             let items = window.__thkToolkit.getRoomDirectory?.() || window.__thkToolkit.getAllRooms().map(room => ({...room,key:'room:' + room.id,available:true}));
@@ -342,6 +362,23 @@
                 writeParents(readParents());
                 if (createChild) createdId = await saveCategory(name.value.trim(), [...selectedRooms], createdId);
                 reparent(createChild ? createdId : id, parent);
+                const targetId = createChild ? createdId : id;
+                const targetPos = parseInt(posInput.value, 10);
+                if (!isNaN(targetPos) && targetPos >= 1) {
+                    const order = readFolderOrder();
+                    const currentTree = buildTree(categories(), readParents(), order);
+                    let siblings = [];
+                    if (!parent) {
+                        siblings = currentTree.map(f => f.id);
+                    } else {
+                        const parentNode = flatten(currentTree).find(f => f.id === parent);
+                        siblings = (parentNode?.children || []).map(f => f.id);
+                    }
+                    siblings = siblings.filter(sId => sId !== targetId);
+                    siblings.splice(Math.max(0, targetPos - 1), 0, targetId);
+                    order[parent] = siblings;
+                    writeFolderOrder(order);
+                }
                 mount(); reveal(parent); view.close();
             } catch (error) { status.textContent = error?.message || text('failed'); }
             finally { save.disabled = false; }
@@ -676,25 +713,6 @@
             categoryMenu = {trigger, header, owner:storageKey()};
         } else if (!event.target.closest?.('[role="menu"]')) {
             closeCategoryMenu();
-        }
-        // Intercept clicks on native Chatwork "Sắp xếp lại danh mục"
-        const reorderTrigger = event.target.closest?.('button, a, [role="menuitem"], li, div');
-        if (reorderTrigger && !reorderTrigger.closest?.('#thk-toolkit-panel, .thk-modal-box')) {
-            const txt = (reorderTrigger.textContent || '').trim().toLowerCase();
-            const aria = (reorderTrigger.getAttribute('aria-label') || '').toLowerCase();
-            if (
-                txt === 'sắp xếp lại danh mục' || aria === 'sắp xếp lại danh mục' ||
-                txt.includes('sắp xếp lại danh mục') ||
-                txt.includes('カテゴリーの並び替え') ||
-                txt === '並び替え' ||
-                txt.includes('reorder categories')
-            ) {
-                event.preventDefault();
-                event.stopPropagation();
-                closeCategoryMenu();
-                openReorderModal();
-                return;
-            }
         }
         // Immediate UI synchronization when expanding or collapsing folders
         if (trigger && (trigger === header || trigger.getAttribute?.('aria-expanded') !== null || trigger.matches?.('.thk-native-folder-heading'))) {
