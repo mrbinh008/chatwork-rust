@@ -60,5 +60,12 @@ assert.ok(!code.buttons[0].innerHTML.includes('>Copy<'),'Icon only');
     assert.equal(copied,'  indented\n\n  last line  \n','Copy preserves whitespace and omits UI');
     assert.equal(code.buttons[0].title,'Đã sao chép');
     assert.ok(code.buttons[0].innerHTML.includes('<polyline'));
+
+    const bbCodeBlock = new Block('Header\r\n[code]\r\n  console.log("test");\r\n[/code]\r\nFooter\n');
+    bbCodeBlock.buttons.push({ parentBlock: bbCodeBlock, remove() {} });
+    assert.equal(copyContext.getCodeText(bbCodeBlock), '  console.log("test");', 'getCodeText extracts only content wrapped inside [code] tag');
+    assert.equal(copyContext.extractCodeTagContent('Normal text [code]const a = 1;[/code] end'), 'const a = 1;', 'extractCodeTagContent extracts only code');
+    assert.equal(copyContext.extractCodeTagContent('[code]part 1[/code] and [code]part 2[/code]'), 'part 1\n\npart 2', 'extractCodeTagContent joins multiple code tags');
+
     console.log('Chatwork preview and code-only copy icon regression checks passed.');
 })();
