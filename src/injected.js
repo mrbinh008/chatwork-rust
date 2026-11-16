@@ -2567,18 +2567,52 @@
             document.body.appendChild(popover);
             activePopover = popover;
 
-            const popWidth = Math.min(360, window.innerWidth - 30);
-            popover.style.width = popWidth + 'px';
-            const scrollY = window.scrollY || window.pageYOffset || 0;
-            const scrollX = window.scrollX || window.pageXOffset || 0;
-            let top = (rect ? rect.bottom : 200) + scrollY + 8;
-            let left = (rect ? rect.left + (rect.width / 2) : window.innerWidth / 2) + scrollX - (popWidth / 2);
-            left = Math.max(10, Math.min(window.innerWidth - popWidth - 10, left));
-            if (top + 180 > window.innerHeight + scrollY && rect) {
-                top = Math.max(scrollY + 10, rect.top + scrollY - 200);
+            function updatePosition() {
+                if (!popover || !popover.isConnected) return;
+                const popWidth = Math.min(360, window.innerWidth - 24);
+                popover.style.width = popWidth + 'px';
+                const popHeight = popover.offsetHeight || 120;
+
+                let left = rect
+                    ? (rect.left + (rect.width / 2) - (popWidth / 2))
+                    : (window.innerWidth / 2 - popWidth / 2);
+                left = Math.max(10, Math.min(window.innerWidth - popWidth - 10, left));
+
+                let top;
+                if (rect) {
+                    const spaceBelow = window.innerHeight - rect.bottom;
+                    const spaceAbove = rect.top;
+
+                    // If space below is not enough for popover, place it above the text selection
+                    if (spaceBelow < popHeight + 14 && spaceAbove >= popHeight + 14) {
+                        top = rect.top - popHeight - 8;
+                    } else if (spaceBelow >= popHeight + 14) {
+                        top = rect.bottom + 8;
+                    } else {
+                        // Tight space on both sides: pick side with more space
+                        if (spaceAbove > spaceBelow) {
+                            top = Math.max(10, rect.top - popHeight - 8);
+                        } else {
+                            top = Math.min(window.innerHeight - popHeight - 10, rect.bottom + 8);
+                        }
+                    }
+                } else {
+                    top = Math.max(10, (window.innerHeight - popHeight) / 2);
+                }
+
+                // Strict screen edge clamp: never overflow bottom or top
+                if (top + popHeight > window.innerHeight - 10) {
+                    top = Math.max(10, window.innerHeight - popHeight - 10);
+                }
+                if (top < 10) {
+                    top = 10;
+                }
+
+                popover.style.top = top + 'px';
+                popover.style.left = left + 'px';
             }
-            popover.style.top = top + 'px';
-            popover.style.left = left + 'px';
+
+            updatePosition();
 
             popover.querySelector('.thk-translate-close')?.addEventListener('click', closePopover);
 
@@ -2588,12 +2622,14 @@
                 const langNames = { ja: 'Tiếng Nhật', en: 'Tiếng Anh', zh: 'Tiếng Trung', 'zh-CN': 'Tiếng Trung', ko: 'Tiếng Hàn', fr: 'Tiếng Pháp', de: 'Tiếng Đức', ru: 'Tiếng Nga' };
                 const langLabel = langNames[res.detected] || res.detected || 'Tự động';
 
+                const title = popover.querySelector('.thk-translate-title');
+                if (title) {
+                    title.innerHTML = `🌐 Bản dịch TV <span class="thk-translate-badge">${escapeHtml(langLabel)}</span>`;
+                }
+
                 const body = popover.querySelector('.thk-translate-body');
                 if (body) {
                     body.innerHTML = `
-                        <div class="thk-translate-meta">Nguyên văn (${escapeHtml(langLabel)}):</div>
-                        <div class="thk-translate-orig">${escapeHtml(res.original.length > 120 ? res.original.slice(0, 120) + '…' : res.original)}</div>
-                        <div class="thk-translate-meta">Bản dịch tiếng Việt:</div>
                         <div class="thk-translate-text">${escapeHtml(res.translated)}</div>
                     `;
                 }
@@ -2623,12 +2659,16 @@
                 footer.appendChild(quoteBtn);
 
                 popover.appendChild(footer);
+
+                // Reposition accurately with final rendered height to prevent overflow
+                updatePosition();
             } catch (err) {
                 if (!popover.isConnected || popover !== activePopover) return;
                 const body = popover.querySelector('.thk-translate-body');
                 if (body) {
                     body.innerHTML = `<div class="thk-translate-error">❌ ${escapeHtml(err.message || 'Lỗi khi dịch.')}</div>`;
                 }
+                updatePosition();
             }
         }
 
@@ -2699,12 +2739,13 @@
 
             const bubbleWidth = 114;
             const bubbleHeight = 30;
-            const scrollY = window.scrollY || window.pageYOffset || 0;
-            const scrollX = window.scrollX || window.pageXOffset || 0;
-            let top = rect.top + scrollY - bubbleHeight - 6;
-            let left = rect.left + scrollX + (rect.width / 2) - (bubbleWidth / 2);
-            if (top < scrollY + 10) {
-                top = rect.bottom + scrollY + 6;
+            let top = rect.top - bubbleHeight - 6;
+            let left = rect.left + (rect.width / 2) - (bubbleWidth / 2);
+            if (top < 10) {
+                top = rect.bottom + 6;
+            }
+            if (top + bubbleHeight > window.innerHeight - 6) {
+                top = window.innerHeight - bubbleHeight - 6;
             }
             left = Math.max(10, Math.min(window.innerWidth - bubbleWidth - 10, left));
             bubble.style.top = top + 'px';

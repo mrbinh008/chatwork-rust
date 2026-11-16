@@ -20,6 +20,8 @@ pub mod ids {
     pub const WIN_MINIMIZE: &str = "win_minimize";
     pub const WIN_MAXIMIZE: &str = "win_maximize";
 
+    pub const APP_SETTINGS: &str = "app_settings";
+
     pub const HELP_ABOUT: &str = "help_about";
     pub const HELP_CHECK_UPDATES: &str = "help_check_updates";
     pub const HELP_SUPPORT: &str = "help_support";
@@ -69,6 +71,11 @@ pub fn build_menu_bar() -> Menu {
     go_menu.append(&MenuItem::with_id(MenuId::new(ids::GO_FORWARD), "Forward\tAlt+Right", true, None)).unwrap();
     menu.append(&go_menu).unwrap();
 
+    // --- Settings ---
+    let settings_menu = Submenu::new("Settings", true);
+    settings_menu.append(&MenuItem::with_id(MenuId::new(ids::APP_SETTINGS), "THK-Chat Settings...\tCtrl+,", true, None)).unwrap();
+    menu.append(&settings_menu).unwrap();
+
     // --- Window ---
     let win_menu = Submenu::new("Window", true);
     win_menu.append(&MenuItem::with_id(MenuId::new(ids::WIN_MINIMIZE), "Minimize", true, None)).unwrap();
@@ -77,6 +84,8 @@ pub fn build_menu_bar() -> Menu {
 
     // --- Help ---
     let help_menu = Submenu::new("Help", true);
+    help_menu.append(&MenuItem::with_id(MenuId::new(ids::APP_SETTINGS), "Settings...\tCtrl+,", true, None)).unwrap();
+    help_menu.append(&PredefinedMenuItem::separator()).unwrap();
     help_menu.append(&MenuItem::with_id(MenuId::new(ids::HELP_CHECK_UPDATES), "Check for Updates...", true, None)).unwrap();
     help_menu.append(&PredefinedMenuItem::separator()).unwrap();
     help_menu.append(&MenuItem::with_id(MenuId::new(ids::HELP_SUPPORT), "Support", true, None)).unwrap();

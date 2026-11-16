@@ -153,7 +153,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let windows = submenu("Window")
         windows.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         item("Show THK-Chat", #selector(showWindow), in: windows)
+        windows.addItem(.separator())
+        item("Settings…", #selector(settings), ",", in: windows)
         NSApp.windowsMenu = windows
+        let help = submenu("Help")
+        item("Settings…", #selector(settings), in: help)
+        item("Check for Updates…", #selector(checkUpdates), in: help)
+        item("About THK-Chat", #selector(about), in: help)
         NSApp.mainMenu = menu
     }
 

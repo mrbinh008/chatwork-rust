@@ -446,6 +446,9 @@ fn handle_menu_event(
         WIN_MAXIMIZE => {
             window.set_maximized(!window.is_maximized());
         }
+        APP_SETTINGS => {
+            let _ = webview.evaluate_script("window.__thkToolkit?.openSettings?.();");
+        }
         HELP_ABOUT => {
             show_about_dialog();
         }

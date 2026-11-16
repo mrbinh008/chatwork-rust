@@ -336,7 +336,7 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 
 /* ── Text Selection Translation to Vietnamese ── */
 .thk-selection-translate-bubble {
-  position:absolute; z-index:2147483640; display:inline-flex; align-items:center; gap:5px;
+  position:fixed; z-index:2147483640; display:inline-flex; align-items:center; gap:5px;
   height:28px; padding:0 10px; border-radius:14px; background:var(--thk-surface, #ffffff);
   color:var(--thk-text, #202124); border:1px solid var(--thk-border, #dcdfe3);
   box-shadow:0 3px 10px rgba(0,0,0,0.14); font:500 12px/1 var(--thk-font, system-ui, sans-serif);
@@ -362,7 +362,8 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 }
 
 .thk-translate-popover {
-  position:absolute; z-index:2147483646; max-width:360px; min-width:260px;
+  position:fixed; z-index:2147483646; max-width:360px; min-width:260px;
+  max-height:calc(100vh - 20px); display:flex; flex-direction:column;
   background:var(--thk-surface, #ffffff); color:var(--thk-text, #202124);
   border:1px solid var(--thk-border, #dcdfe3); border-radius:10px;
   box-shadow:0 10px 30px rgba(0,0,0,0.22); padding:12px 14px; box-sizing:border-box;
@@ -371,14 +372,21 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 .thk-translate-header {
   display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid var(--thk-border, #dcdfe3);
+  flex-shrink:0;
 }
-.thk-translate-title { font-size:12px; font-weight:700; color:var(--thk-accent, #00865d); }
+.thk-translate-title { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--thk-accent, #00865d); }
+.thk-translate-badge {
+  font-size:10px; font-weight:600; padding:1px 6px; border-radius:4px;
+  background:var(--thk-tint, #e8f5ef); color:var(--thk-accent, #00865d);
+  border:1px solid var(--thk-border, #dcdfe3);
+}
 .thk-translate-close {
   display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
   padding:0; border:0; border-radius:4px; background:transparent;
   color:var(--thk-muted, #687179); cursor:pointer; font-size:13px; line-height:1;
 }
 .thk-translate-close:hover { background:rgba(0,0,0,0.06); color:var(--thk-text, #202124); }
+.thk-translate-body { display:flex; flex-direction:column; min-height:0; overflow-y:auto; }
 .thk-translate-meta { font-size:11px; color:var(--thk-muted, #687179); margin-bottom:4px; }
 .thk-translate-orig {
   font-size:11px; font-style:italic; color:var(--thk-muted, #687179);
@@ -388,11 +396,12 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
 .thk-translate-text {
   font-size:13px; line-height:1.5; color:var(--thk-text, #202124);
   background:var(--thk-tint, #e8f5ef); border:1px solid var(--thk-border, #dcdfe3);
-  padding:8px 10px; border-radius:6px; max-height:180px; overflow-y:auto;
+  padding:8px 10px; border-radius:6px; max-height:220px; overflow-y:auto;
   white-space:pre-wrap; word-break:break-word;
 }
 .thk-translate-footer {
   display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:10px;
+  flex-shrink:0;
 }
 .thk-translate-btn {
   padding:5px 9px; border-radius:5px; border:1px solid var(--thk-border, #dcdfe3);
@@ -414,5 +423,22 @@ video.thk-file-preview-media { width:100%; min-height:200px; }
   animation:thk-spin 0.6s linear infinite;
 }
 .thk-translate-error { padding:8px 0; font-size:12px; color:#d32f2f; }
+
+/* ── Top Header Bar Settings Button ── */
+.thk-header-settings-btn {
+  display:inline-flex!important; align-items:center!important; justify-content:center!important;
+  width:30px!important; height:30px!important; padding:0!important; border:0!important;
+  border-radius:6px!important; background:transparent!important; color:inherit!important;
+  cursor:pointer!important; opacity:0.85; transition:opacity .15s ease, background .15s ease;
+  margin:0 4px!important; vertical-align:middle;
+}
+.thk-header-settings-btn:hover {
+  opacity:1!important; background:rgba(255, 255, 255, 0.2)!important;
+}
+:root:not([data-thk-theme]):not(:has(body.dark)) #_globalHeader .thk-header-settings-btn:hover,
+:root[data-thk-theme="light"] #_globalHeader .thk-header-settings-btn:hover {
+  background:rgba(0, 0, 0, 0.08)!important;
+}
+.thk-header-settings-btn svg { width:18px; height:18px; display:block; }
 @keyframes thk-fade-in { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:translateY(0); } }
 @keyframes thk-spin { to { transform:rotate(360deg); } }

@@ -773,10 +773,38 @@
             syncToolbar();
         }, 80);
     }
+    function mountHeaderSettings() {
+        const header = document.querySelector('#_globalHeader, header[role="banner"], header');
+        if (!header) return;
+        let btn = header.querySelector('#thk-header-settings');
+        if (!btn) {
+            btn = element('button', 'thk-header-settings-btn');
+            btn.id = 'thk-header-settings';
+            btn.type = 'button';
+            btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+            btn.addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                openSettings();
+            });
+            const anchor = header.querySelector('#_myStatus, .globalHeader__myStatus, #_help, [class*="myStatus"]') || header.lastElementChild;
+            if (anchor && anchor.parentElement) {
+                anchor.parentElement.insertBefore(btn, anchor);
+            } else {
+                header.appendChild(btn);
+            }
+        }
+        const label = t('settings') + ' (Ctrl+,)';
+        if (btn.title !== label) {
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+        }
+    }
     function syncToolbar() {
         syncCoreTheme();
         localize();
         mountRoomTree();
+        mountHeaderSettings();
         const toolbar = document.getElementById('thk-toolbar-inline');
         if (!toolbar) return;
         toolbar.querySelector('#thkToolkit-emoji')?.remove();
@@ -853,6 +881,12 @@
         if (typeof window.addEventListener === 'function') {
             window.addEventListener('hashchange', () => { closePanel?.(); syncToolbar(); });
             window.addEventListener('storage', event => { if (event.key?.startsWith('thk-toolkit.toolbar')) syncToolbar(); });
+            window.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+                    e.preventDefault();
+                    openSettings();
+                }
+            });
         }
         if (typeof setInterval === 'function') setInterval(scheduleToolbarSync, 1500);
     }
