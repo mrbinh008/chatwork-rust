@@ -1592,6 +1592,9 @@
             <button type="button" class="thk-icon-btn thk-btn-preview" id="thkBtnMarkdownPreview" title="Xem trước tin nhắn (Ctrl+Shift+P / Cmd+Shift+P)">
                 ${formattingIcons[4]}
             </button>
+            <button type="button" class="thk-icon-btn thk-btn-translate-page" id="thkBtnTranslatePage" title="Dịch toàn bộ trang sang tiếng Việt (Ctrl+Shift+T / Cmd+Shift+T)" aria-label="Dịch toàn bộ trang sang tiếng Việt" aria-pressed="false">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+            </button>
         `;
 
         group.querySelector('#thkBtnInfo').addEventListener('click', () => wrapInfo(false));
@@ -1600,6 +1603,17 @@
         group.querySelector('#thkBtnHr').addEventListener('click', insertHr);
         group.querySelector('#thkBtnLeaveRequest').addEventListener('click', openLeaveRequestModal);
         group.querySelector('#thkBtnMarkdownPreview').addEventListener('click', openMarkdownPreviewModal);
+        const transBtn = group.querySelector('#thkBtnTranslatePage');
+        if (transBtn) {
+            if (window.__thkIsFullPageTranslateActive?.()) {
+                transBtn.classList.add('active');
+                transBtn.setAttribute('aria-pressed', 'true');
+                transBtn.title = 'Tắt dịch toàn bộ trang (Ctrl+Shift+T / Cmd+Shift+T)';
+            }
+            transBtn.addEventListener('click', () => {
+                window.__thkToggleFullPageTranslation?.();
+            });
+        }
 
         return group;
     }
@@ -1844,6 +1858,13 @@
             if (modKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
                 e.preventDefault();
                 openMarkdownPreviewModal();
+                return;
+            }
+
+            // Global shortcut: Ctrl+Shift+T / Cmd+Shift+T -> Toggle Full Page Translation
+            if (modKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+                e.preventDefault();
+                window.__thkToggleFullPageTranslation?.();
                 return;
             }
 
@@ -2487,7 +2508,31 @@
         });
     }
 
-    // ── 17. Text Selection Translation to Vietnamese ──────────────────────────
+    // ── 17. Shared Translation Helpers ───────────────────────────────────────
+    function escapeHtml(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    async function translateText(text, targetLang = 'vi') {
+        const trimmed = String(text || '').trim();
+        if (!trimmed) return null;
+        const query = trimmed.length > 4000 ? trimmed.substring(0, 4000) : trimmed;
+        const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(query);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Không thể kết nối đến máy chủ dịch thuật.');
+        const data = await res.json();
+        if (!Array.isArray(data?.[0])) throw new Error('Dữ liệu dịch không hợp lệ.');
+        const translated = data[0].map(s => s[0] || '').join('');
+        const detected = data[2] || 'auto';
+        return { original: trimmed, translated, detected };
+    }
+
+    // ── 18. Text Selection Translation to Vietnamese ──────────────────────────
     function initSelectionTranslator() {
         if (window.__thkSelectionTranslatorLoaded) return;
         window.__thkSelectionTranslatorLoaded = true;
@@ -2508,29 +2553,6 @@
                 activePopover.remove();
                 activePopover = null;
             }
-        }
-
-        function escapeHtml(str) {
-            return String(str || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        async function translateText(text, targetLang = 'vi') {
-            const trimmed = String(text || '').trim();
-            if (!trimmed) return null;
-            const query = trimmed.length > 4000 ? trimmed.substring(0, 4000) : trimmed;
-            const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(query);
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('Không thể kết nối đến máy chủ dịch thuật.');
-            const data = await res.json();
-            if (!Array.isArray(data?.[0])) throw new Error('Dữ liệu dịch không hợp lệ.');
-            const translated = data[0].map(s => s[0] || '').join('');
-            const detected = data[2] || 'auto';
-            return { original: trimmed, translated, detected };
         }
 
         function insertIntoChat(translated) {
@@ -2782,7 +2804,220 @@
         });
     }
 
-    // ── 18. Periodic & Mutation Check to bind dynamic elements ───────────────
+    // ── 19. Full Page & Timeline Translation to Vietnamese ─────────────────────
+    function initFullPageTranslator() {
+        if (window.__thkFullPageTranslatorLoaded) return;
+        window.__thkFullPageTranslatorLoaded = true;
+
+        let isFullPageTranslateActive = false;
+        let hideOriginals = false;
+        const fullTranslateCache = new Map();
+        let fullTranslateObserver = null;
+        let fullTranslateDebounce = null;
+
+        function updateButtons() {
+            document.querySelectorAll('#thkBtnTranslatePage').forEach(btn => {
+                btn.setAttribute('aria-pressed', isFullPageTranslateActive ? 'true' : 'false');
+                if (isFullPageTranslateActive) {
+                    btn.classList.add('active');
+                    btn.title = 'Tắt dịch toàn bộ trang (Ctrl+Shift+T / Cmd+Shift+T)';
+                } else {
+                    btn.classList.remove('active');
+                    btn.title = 'Dịch toàn bộ trang sang tiếng Việt (Ctrl+Shift+T / Cmd+Shift+T)';
+                }
+            });
+        }
+
+        function ensureFullTranslateBanner() {
+            let banner = document.getElementById('thk-full-trans-banner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'thk-full-trans-banner';
+                banner.className = 'thk-full-trans-banner';
+                banner.innerHTML = `
+                    <div class="thk-trans-banner-info">
+                        <span class="thk-trans-banner-icon">🌐</span>
+                        <span class="thk-trans-banner-text">Đang bật dịch toàn bộ trang sang Tiếng Việt</span>
+                        <span class="thk-trans-banner-count" id="thk-trans-count">Đang quét tin nhắn…</span>
+                    </div>
+                    <div class="thk-trans-banner-actions">
+                        <button type="button" class="thk-trans-banner-btn" id="thk-btn-toggle-orig">${hideOriginals ? 'Hiện bản gốc' : 'Ẩn bản gốc'}</button>
+                        <button type="button" class="thk-trans-banner-btn thk-trans-banner-btn-close" id="thk-btn-stop-trans">✕ Tắt dịch</button>
+                    </div>
+                `;
+                banner.querySelector('#thk-btn-toggle-orig')?.addEventListener('click', () => {
+                    hideOriginals = !hideOriginals;
+                    const timeline = document.querySelector('#_timeLine');
+                    const toggleBtn = document.getElementById('thk-btn-toggle-orig');
+                    if (hideOriginals) {
+                        timeline?.classList.add('thk-hide-originals');
+                        if (toggleBtn) toggleBtn.textContent = 'Hiện bản gốc';
+                    } else {
+                        timeline?.classList.remove('thk-hide-originals');
+                        if (toggleBtn) toggleBtn.textContent = 'Ẩn bản gốc';
+                    }
+                });
+                banner.querySelector('#thk-btn-stop-trans')?.addEventListener('click', () => {
+                    toggleFullPageTranslation(false);
+                });
+
+                const timeline = document.querySelector('#_timeLine');
+                if (timeline && timeline.parentElement) {
+                    timeline.parentElement.insertBefore(banner, timeline);
+                } else {
+                    const room = document.getElementById('CurrentSelectedRoom') || document.body;
+                    room.insertBefore(banner, room.firstChild);
+                }
+            }
+        }
+
+        function updateBannerCount() {
+            const count = document.querySelectorAll('.thk-msg-translation').length;
+            const countEl = document.getElementById('thk-trans-count');
+            if (countEl) {
+                countEl.textContent = count > 0 ? `(Đã dịch ${count} tin nhắn)` : '(Đã quét xong)';
+            }
+        }
+
+        async function translateAllVisibleMessages() {
+            if (!isFullPageTranslateActive) return;
+
+            const timeline = document.querySelector('#_timeLine, #CurrentSelectedRoom');
+            if (!timeline) return;
+
+            const msgNodes = timeline.querySelectorAll('div[id^="_message"], [data-mid], [data-message-id], ._message, .chatTimeLineMessage');
+            const tasks = [];
+
+            msgNodes.forEach(msgEl => {
+                if (msgEl.querySelector('.thk-msg-translation') || msgEl.getAttribute('data-thk-lang') === 'vi') return;
+                const pre = msgEl.querySelector('pre:not(._code):not(.code):not([data-cwtag="code"])');
+                const targetEl = pre || msgEl.querySelector('.chatTimeLineMessage__message, [data-cwui-comp="timeline-body"]');
+                if (!targetEl) return;
+                const text = (targetEl.innerText || '').trim();
+                if (!text || text.length < 2) return;
+                tasks.push({ msgEl, targetEl, text });
+            });
+
+            // Also check room description
+            const descEl = document.querySelector('#_roomDescription, .roomDescription__content, [data-testid="room-description"]');
+            if (descEl && !descEl.querySelector('.thk-msg-translation') && descEl.getAttribute('data-thk-lang') !== 'vi') {
+                const text = (descEl.innerText || '').trim();
+                if (text && text.length > 2) {
+                    tasks.push({ msgEl: descEl, targetEl: descEl, text });
+                }
+            }
+
+            if (tasks.length === 0) {
+                updateBannerCount();
+                return;
+            }
+
+            const concurrency = 4;
+            let index = 0;
+            const workers = Array(Math.min(concurrency, tasks.length)).fill(0).map(async () => {
+                while (index < tasks.length && isFullPageTranslateActive) {
+                    const item = tasks[index++];
+                    try {
+                        let res = fullTranslateCache.get(item.text);
+                        if (!res) {
+                            res = await translateText(item.text, 'vi');
+                            if (res) fullTranslateCache.set(item.text, res);
+                        }
+                        if (!res || !isFullPageTranslateActive) continue;
+
+                        if (res.detected === 'vi') {
+                            item.msgEl.setAttribute('data-thk-lang', 'vi');
+                            continue;
+                        }
+
+                        if (item.msgEl.querySelector('.thk-msg-translation')) continue;
+
+                        const langNames = { ja: 'Tiếng Nhật', en: 'Tiếng Anh', zh: 'Tiếng Trung', 'zh-CN': 'Tiếng Trung', ko: 'Tiếng Hàn', fr: 'Tiếng Pháp', de: 'Tiếng Đức', ru: 'Tiếng Nga' };
+                        const langLabel = langNames[res.detected] || res.detected?.toUpperCase() || 'Bản dịch';
+
+                        const transEl = document.createElement('div');
+                        transEl.className = 'thk-msg-translation';
+                        transEl.setAttribute('data-thk-trans', 'true');
+                        transEl.innerHTML = `
+                            <div class="thk-msg-trans-header">
+                                <span class="thk-msg-trans-tag">🌐 Bản dịch TV (${escapeHtml(langLabel)})</span>
+                                <button type="button" class="thk-msg-trans-btn-copy" title="Sao chép bản dịch">📋 Sao chép</button>
+                            </div>
+                            <div class="thk-msg-trans-body">${escapeHtml(res.translated)}</div>
+                        `;
+                        transEl.querySelector('.thk-msg-trans-btn-copy')?.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            navigator.clipboard?.writeText(res.translated);
+                            const btn = e.currentTarget;
+                            btn.textContent = '✓ Đã chép!';
+                            setTimeout(() => { if (btn.isConnected) btn.textContent = '📋 Sao chép'; }, 1200);
+                        });
+
+                        item.targetEl.insertAdjacentElement('afterend', transEl);
+                    } catch (e) {
+                        console.warn('[THK Full Page Translation] Error on item:', e);
+                    }
+                }
+            });
+
+            await Promise.all(workers);
+            updateBannerCount();
+        }
+
+        async function toggleFullPageTranslation(forceState) {
+            if (typeof forceState === 'boolean') {
+                isFullPageTranslateActive = forceState;
+            } else {
+                isFullPageTranslateActive = !isFullPageTranslateActive;
+            }
+
+            updateButtons();
+
+            if (!isFullPageTranslateActive) {
+                if (fullTranslateObserver) {
+                    fullTranslateObserver.disconnect();
+                    fullTranslateObserver = null;
+                }
+                document.getElementById('thk-full-trans-banner')?.remove();
+                document.querySelectorAll('.thk-msg-translation').forEach(el => el.remove());
+                document.querySelector('#_timeLine')?.classList.remove('thk-hide-originals');
+                hideOriginals = false;
+                return;
+            }
+
+            ensureFullTranslateBanner();
+            await translateAllVisibleMessages();
+
+            if (!fullTranslateObserver) {
+                const timeline = document.querySelector('#_timeLine, #CurrentSelectedRoom');
+                if (timeline) {
+                    fullTranslateObserver = new MutationObserver(() => {
+                        clearTimeout(fullTranslateDebounce);
+                        fullTranslateDebounce = setTimeout(() => {
+                            if (isFullPageTranslateActive) translateAllVisibleMessages();
+                        }, 350);
+                    });
+                    fullTranslateObserver.observe(timeline, { childList: true, subtree: true });
+                }
+            }
+        }
+
+        window.addEventListener('hashchange', () => {
+            if (isFullPageTranslateActive) {
+                setTimeout(() => {
+                    if (isFullPageTranslateActive) {
+                        ensureFullTranslateBanner();
+                        translateAllVisibleMessages();
+                    }
+                }, 400);
+            }
+        });
+
+        window.__thkToggleFullPageTranslation = toggleFullPageTranslation;
+        window.__thkIsFullPageTranslateActive = () => isFullPageTranslateActive;
+    }
+
+    // ── 20. Periodic & Mutation Check to bind dynamic elements ───────────────
     function initDynamicWatchers() {
         const update = () => {
             injectThkStyles(); setupQuickToolbar(); setupDescriptionToolbar(); attachCodeCopyButtons();
@@ -2806,10 +3041,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             initDynamicWatchers();
             initSelectionTranslator();
+            initFullPageTranslator();
         });
     } else {
         initDynamicWatchers();
         initSelectionTranslator();
+        initFullPageTranslator();
     }
 
     console.log('[THK Native Client] Fully initialized with Same-row Toolbar, Mention Dropdown, Markdown Preview & Leave Request Modal!');
