@@ -124,12 +124,13 @@ class TransferURL extends URL {
 }
 const uiContext=vm.createContext({window:uiWindow,document:uiDocument,navigator:{language:'vi'},localStorage:{getItem:key=>uiStore.get(key)??null,setItem:(key,value)=>uiStore.set(key,value)},Intl,URL:TransferURL,Blob,Event:UIEvent,NodeFilter:{SHOW_TEXT:4},MutationObserver:class{constructor(callback){uiObserver=callback;}observe(){}},setInterval(){},setTimeout(callback,delay){uiTimers.push({callback,delay});return uiTimers.length;},console});
 vm.runInContext(source,uiContext);uiDocument.listeners.DOMContentLoaded.forEach(fn=>fn());
-assert.equal(toolbar.children.length,4,'All three Toolkit actions share existing toolbar');
+assert.equal(toolbar.children.length,3,'Toolkit compose actions share existing toolbar');
+assert.equal(uiDocument.getElementById('thkToolkit-settings'),null,'Settings button removed from chat compose toolbar');
 assert.equal(leave.hidden,false,'Leave button appears in attendance room');
 assert.equal(uiDocument.getElementById('thkToolkit-pr').hidden,true,'PR button hidden outside review room');
 uiWindow.CW.application.domainServiceContext.roomService.roomRepository.entities[7].name.value='【HN】Source Code Review';
 // Re-run toolbar sync through settings action after changing room.
-uiDocument.getElementById('thkToolkit-settings').click();
+uiWindow.__thkToolkit.openSettings();
 let dialog=uiDocument.getElementById('thk-toolkit-panel');
 let language=dialog.querySelector('select');language.value='vi';language.dispatchEvent(new UIEvent('change'));
 assert.equal(leave.hidden,true);assert.equal(uiDocument.getElementById('thkToolkit-pr').hidden,false);
@@ -190,7 +191,7 @@ uiDocument.getElementById('thkToolkit-pr').click();
 assert.ok(editor.value.includes('Project name: Chatwork\nPull Request: '));
 assert.equal(editor.selectionStart,editor.value.lastIndexOf('Pull Request: ')+'Pull Request: '.length,'Skip remembered project field');
 assert.equal(uiDocument.getElementById('thk-toolkit-panel'),null);
-assert.equal(toolbar.children.length,4,'Repeated setup does not duplicate buttons');
+assert.equal(toolbar.children.length,3,'Repeated setup does not duplicate buttons');
 assert.equal(uiDocument.getElementById('thkToolkit-compact'),null,'Compact mode removed');
 
 // Custom shortkey configuration tests
