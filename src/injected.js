@@ -245,15 +245,26 @@
     }
     setupIncomingMessageObservers();
 
+    function getNotificationRepositoryEntries(repository) {
+        let records;
+        try {
+            records = repository?.getAll?.();
+        } catch (_) {
+            // A repository can be unavailable while Chatwork is updating its state.
+        }
+        if (Array.isArray(records)) return records.map(entity => ['', entity]);
+        if (records instanceof Map) return records.entries();
+        return Object.entries(records && typeof records === 'object' ? records : repository?.entities || {});
+    }
+
     function collectKnownRoomsAndStateMessages() {
         const rooms = new Map();
         const users = new Map();
         const stateMessages = [];
         const app = window.CW?.application;
         const userRepo = app?.domainServiceContext?.userService?.userRepository;
-        const userList = userRepo?.getAll?.() || Object.values(userRepo?.entities || {});
-        for (const user of userList) {
-            const uid = cleanNumericId(user?.identity);
+        for (const [rawId, user] of getNotificationRepositoryEntries(userRepo)) {
+            const uid = cleanNumericId(user?.identity ?? rawId);
             if (!uid) continue;
             const uname = String(unwrapNotificationValue(user?.getName?.() ?? user?.name ?? user?.nickname) || '').trim();
             if (uname) users.set(uid, uname);
@@ -266,10 +277,7 @@
             }
         }
         const roomRepo = app?.domainServiceContext?.roomService?.roomRepository;
-        const roomEntries = roomRepo?.getAll
-            ? (roomRepo.getAll() || []).map(entity => [cleanNumericId(entity?.identity), entity])
-            : Object.entries(roomRepo?.entities || {});
-        for (const [rawId, entity] of roomEntries) {
+        for (const [rawId, entity] of getNotificationRepositoryEntries(roomRepo)) {
             const rid = cleanNumericId(entity?.identity ?? rawId);
             if (!rid) continue;
             const mateId = cleanNumericId(entity?.getMate?.() ?? entity?.mate);
@@ -441,11 +449,22 @@
     }
 
     function resolveNotificationContext(notification, options) {
-        const explicit = parseExplicitTarget(options, notification);
-        let { roomId, messageId, senderId } = explicit;
-        if (roomId && messageId) {
-            return { target: '#!rid' + roomId + '-' + messageId, roomId, messageId, senderId };
+        let context = {};
+        try {
+            context = parseExplicitTarget(options, notification);
+            if (!context.roomId || !context.messageId) {
+                context = inferNotificationContext(notification, options, context);
+            }
+        } catch (error) {
+            console.warn('[THK Native Client] Could not resolve notification target:', error);
         }
+        const { roomId, messageId, senderId } = context;
+        const target = roomId ? ('#!rid' + roomId + (messageId ? '-' + messageId : '')) : null;
+        return { target, senderId };
+    }
+
+    function inferNotificationContext(notification, options, explicit) {
+        let { roomId, messageId, senderId } = explicit;
         const { rooms, users } = collectKnownRoomsAndStateMessages();
         const rawTitle = String(notification?.title || '').trim();
         const rawBody = String(notification?.body ?? options?.body ?? '').trim();
@@ -508,8 +527,7 @@
         } else if (!messageId) {
             messageId = rooms.get(roomId)?.latestMessageId || '';
         }
-        const target = roomId ? ('#!rid' + roomId + (messageId ? '-' + messageId : '')) : null;
-        return { target, roomId, messageId, senderId };
+        return { roomId, messageId, senderId };
     }
 
     function registerNativeNotification(notification, target, options) {
@@ -588,7 +606,12 @@
         notification.close = notification.cancel = function() {};
         notification.show = function() {};
         const context = resolveNotificationContext(notification, options);
-        const icon = getNotificationAvatar(notification, options, context.senderId);
+        let icon = '';
+        try {
+            icon = getNotificationAvatar(notification, options, context.senderId);
+        } catch (error) {
+            console.warn('[THK Native Client] Could not resolve notification avatar:', error);
+        }
         window.__chatwork_ipc.notify(notification.title, notification.body, notification, context.target, icon, options);
     }
     function getNotificationAvatar(notification, options, inferredSenderId) {
@@ -618,10 +641,6 @@
         }
         return '';
     }
-    function getNotificationTarget(options, notification) {
-        return resolveNotificationContext(notification, options).target;
-    }
-
     // ── 3. Chatwork Desktop window.NotificationAPI Hook ───────────────────────
     function createChatworkNotification(arg1, arg2, arg3, options) {
         let title = '', body = '', icon = '';

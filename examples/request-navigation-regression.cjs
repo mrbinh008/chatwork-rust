@@ -233,6 +233,39 @@ new navContext.NativeNotificationPolyfill('Wrapped IDs', {
 assert.equal(messages.at(-1).payload.target, '#!rid77-777');
 new navContext.NativeNotificationPolyfill('Tag IDs', { tag: 'rid88-888' });
 assert.equal(messages.at(-1).payload.target, '#!rid88-888');
+
+// Chatwork repositories can return keyed collections or be temporarily unavailable.
+const services = window.CW.application.domainServiceContext;
+services.userService.userRepository.getAll = () => ({ '606': { name: 'New Sender' } });
+services.roomService.roomRepository.getAll = () => new Map([
+    ['506', { name: 'New Room', latestMessageId: '9006' }]
+]);
+const beforeKeyed = messages.length;
+new navContext.NativeNotificationPolyfill('New Room', { body: 'New message' });
+assert.equal(messages.length, beforeKeyed + 1);
+assert.equal(messages.at(-1).payload.target, '#!rid506-9006');
+
+services.roomService.roomRepository.getAll = () => { throw new Error('Room repository loading'); };
+navContext.createChatworkNotification('Backend Team', 'Please review API schema');
+assert.equal(messages.at(-1).payload.target, '#!rid501-9001', 'Cached rooms remain available');
+
+services.roomService.roomRepository.entities['501'].getName = () => { throw new Error('Room data loading'); };
+Object.defineProperty(services.userService.userRepository.entities['101'].profile, 'profileImage', {
+    get() { throw new Error('Avatar data loading'); }
+});
+const beforeFallback = messages.length;
+let fallbackClicks = 0;
+const fallback = new navContext.NativeNotificationPolyfill('Backend Team', {
+    body: 'Please review API schema', data: { roomId: '501', accountId: '101' }
+});
+fallback.onclick = () => fallbackClicks++;
+assert.equal(messages.length, beforeFallback + 1);
+assert.equal(messages.at(-1).payload.body, 'Please review API schema');
+assert.equal(messages.at(-1).payload.target, '#!rid501');
+assert.equal(messages.at(-1).payload.icon, null);
+window.__thk_notificationClicked(messages.at(-1).payload.id);
+assert.equal(fallbackClicks, 1, 'Click handler still works when enrichment fails');
+assert.equal(location.hash, '#!rid501');
 while (timers.length) timers.shift()();
 
 console.log('Leave request, message navigation and sender avatar regression checks passed.');
