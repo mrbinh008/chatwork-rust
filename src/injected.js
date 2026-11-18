@@ -27,13 +27,14 @@
                 console.error('[THK Native Client] IPC send error:', e);
             }
         },
-        notify: function(title, body, notification, target, icon) {
-            const id = notification ? registerNativeNotification(notification, target) : null;
+        notify: function(title, body, notification, target, icon, options) {
+            const normalizedTarget = target ? getMessageHash(target) : null;
+            const id = notification ? registerNativeNotification(notification, normalizedTarget, options) : null;
             window.__chatwork_ipc.send('ShowNotification', {
                 title: String(title || 'THK-Chat'),
                 body: String(body || ''),
                 id: id,
-                target: target ? getMessageHash(target) : null,
+                target: normalizedTarget,
                 icon: typeof icon === 'string' && icon.trim() ? icon.trim() : null
             });
         },
@@ -66,13 +67,462 @@
         }
     };
 
-    // Keep each toast tied to its own click handler, even with several pending toasts.
+    // Keep each toast tied to its own click handler and message target, even with many pending toasts.
     const nativeNotifications = new Map();
+    const recentIncomingMessages = [];
+    const recentIncomingIndex = new Map();
     const notificationSession = Date.now().toString(36) + Math.random().toString(36).slice(2);
     let notificationSequence = 0;
-    function registerNativeNotification(notification, target) {
+
+    function unwrapNotificationValue(input) {
+        for (let depth = 0; input && typeof input === 'object' && depth < 5; depth++) {
+            const next = input.getValue?.() ?? input.value ?? input.identity ?? input.userId ?? input.roomId ?? input.messageId ?? input.id;
+            if (next === undefined || next === input) break;
+            input = next;
+        }
+        return input;
+    }
+    function cleanNumericId(value) {
+        const unwrapped = unwrapNotificationValue(value);
+        if (typeof unwrapped !== 'string' && typeof unwrapped !== 'number') return '';
+        const text = String(unwrapped).trim();
+        return /^\d+$/.test(text) ? text : '';
+    }
+    function normalizeNotificationText(text, stripTagsLine = true) {
+        if (typeof text !== 'string') return '';
+        let cleaned = text.replace(/\[qt\][\s\S]*?\[\/qt\]/gi, ' ');
+        if (stripTagsLine) {
+            cleaned = cleaned.replace(/\[(?:To:\d+|rp\s+[^\]]+|picon(?:name)?:\d+|dtext:[^\]]+)\][^\n]*/gi, ' ');
+        }
+        return cleaned
+            .replace(/\[\/?(?:info|title|code|hr|toall|download(?::\d+)?|To:\d+|rp\s+[^\]]+|picon(?:name)?:\d+|dtext:[^\]]+)\]/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    }
+    function recordIncomingMessage(roomId, messageId, accountId, body, timestamp) {
+        const rid = cleanNumericId(roomId);
+        const mid = cleanNumericId(messageId);
+        if (!rid || !mid) return;
+        const key = rid + '-' + mid;
+        const now = Date.now();
+        const aid = cleanNumericId(accountId);
+        const text = typeof body === 'string' ? body : String(unwrapNotificationValue(body) ?? '');
+        const existing = recentIncomingIndex.get(key);
+        if (existing) {
+            if (aid && !existing.accountId) existing.accountId = aid;
+            if (text && !existing.body) existing.body = text;
+            existing.capturedAt = now;
+            return;
+        }
+        const entry = {
+            key,
+            roomId: rid,
+            messageId: mid,
+            accountId: aid,
+            body: text,
+            timestamp: Number(unwrapNotificationValue(timestamp)) || 0,
+            capturedAt: now,
+            usedForNotification: false
+        };
+        recentIncomingMessages.push(entry);
+        recentIncomingIndex.set(key, entry);
+        const cutoff = now - 15 * 60 * 1000;
+        while (recentIncomingMessages.length > 250 || (recentIncomingMessages.length > 50 && recentIncomingMessages[0].capturedAt < cutoff)) {
+            const removed = recentIncomingMessages.shift();
+            if (removed) recentIncomingIndex.delete(removed.key);
+        }
+    }
+    function ingestChatListForRoom(roomId, chatList) {
+        if (!chatList || typeof chatList !== 'object') return;
+        const items = Array.isArray(chatList) ? chatList : Object.entries(chatList).map(([k, v]) => (v && typeof v === 'object' ? { id: k, ...v } : null));
+        for (const item of items) {
+            if (!item || typeof item !== 'object') continue;
+            const mid = item.id ?? item.mid ?? item.message_id ?? item.messageId ?? item.chat_id ?? item.chatId ?? item.identity;
+            const aid = item.aid ?? item.account_id ?? item.accountId ?? item.sender_id ?? item.from_id ?? item.userId;
+            const msg = item.msg ?? item.body ?? item.message ?? item.text;
+            const tm = item.tm ?? item.send_time ?? item.timestamp ?? item.time;
+            recordIncomingMessage(roomId, mid, aid, msg, tm);
+        }
+    }
+    function ingestIncomingData(data, depth = 0) {
+        if (!data || typeof data !== 'object' || depth > 5) return;
+        if (Array.isArray(data)) {
+            for (let i = Math.max(0, data.length - 50); i < data.length; i++) ingestIncomingData(data[i], depth + 1);
+            return;
+        }
+        const directRoom = cleanNumericId(data.room_id ?? data.roomId ?? data.rid);
+        const directMsg = cleanNumericId(data.message_id ?? data.messageId ?? data.mid ?? data.chat_id ?? data.chatId);
+        if (directRoom && directMsg) {
+            recordIncomingMessage(
+                directRoom,
+                directMsg,
+                data.account_id ?? data.accountId ?? data.aid ?? data.sender_id ?? data.from_id,
+                data.body ?? data.msg ?? data.message ?? data.text,
+                data.tm ?? data.send_time ?? data.timestamp
+            );
+        }
+        if (directRoom && data.chat_list) ingestChatListForRoom(directRoom, data.chat_list);
+        const roomDat = data.room_dat ?? data.rooms;
+        if (roomDat && typeof roomDat === 'object' && !Array.isArray(roomDat)) {
+            for (const [rid, roomObj] of Object.entries(roomDat)) {
+                if (!roomObj || typeof roomObj !== 'object') continue;
+                const resolvedRid = cleanNumericId(roomObj.rid ?? roomObj.room_id ?? rid);
+                if (!resolvedRid) continue;
+                if (roomObj.chat_list) ingestChatListForRoom(resolvedRid, roomObj.chat_list);
+                if (roomObj.timeline?.chat_list) ingestChatListForRoom(resolvedRid, roomObj.timeline.chat_list);
+            }
+        }
+        for (const key of ['result', 'update_info', 'data', 'payload', 'event', 'events', 'messages', 'message_data']) {
+            if (data[key] && typeof data[key] === 'object') ingestIncomingData(data[key], depth + 1);
+        }
+    }
+    window.__thk_recordIncomingPayload = ingestIncomingData;
+
+    function setupIncomingMessageObservers() {
+        try {
+            if (typeof Response !== 'undefined' && Response.prototype && typeof Response.prototype.json === 'function') {
+                const origJson = Response.prototype.json;
+                Response.prototype.json = function() {
+                    return origJson.apply(this, arguments).then(function(parsed) {
+                        try { ingestIncomingData(parsed); } catch (_) {}
+                        return parsed;
+                    });
+                };
+            }
+        } catch (_) {}
+        try {
+            if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype && typeof XMLHttpRequest.prototype.open === 'function') {
+                const origOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    const urlStr = typeof url === 'string' ? url : String(url ?? '');
+                    if (/get_update|load_chat|init_load|get_room|chat|message|rooms/i.test(urlStr)) {
+                        this.addEventListener('readystatechange', function() {
+                            if (this.readyState !== 4 || this.status !== 200) return;
+                            try {
+                                if (this.responseType === 'json' && this.response) {
+                                    ingestIncomingData(this.response);
+                                } else if (!this.responseType || this.responseType === 'text') {
+                                    const text = this.responseText;
+                                    if (typeof text === 'string' && text.length > 1 && text.length < 10_000_000) {
+                                        const trimmed = text.trimStart();
+                                        if (trimmed.startsWith('{') || trimmed.startsWith('[')) ingestIncomingData(JSON.parse(trimmed));
+                                    }
+                                }
+                            } catch (_) {}
+                        });
+                    }
+                    return origOpen.apply(this, arguments);
+                };
+            }
+        } catch (_) {}
+        try {
+            if (typeof window.WebSocket === 'function') {
+                const OrigWebSocket = window.WebSocket;
+                const WrappedWebSocket = function(url, protocols) {
+                    const ws = arguments.length > 1 ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
+                    try {
+                        ws.addEventListener('message', function(event) {
+                            if (typeof event?.data !== 'string' || event.data.length < 2 || event.data.length > 2_000_000) return;
+                            const trimmed = event.data.trimStart();
+                            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                                try { ingestIncomingData(JSON.parse(trimmed)); } catch (_) {}
+                            }
+                        });
+                    } catch (_) {}
+                    return ws;
+                };
+                WrappedWebSocket.prototype = OrigWebSocket.prototype;
+                Object.setPrototypeOf(WrappedWebSocket, OrigWebSocket);
+                for (const key of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']) {
+                    if (key in OrigWebSocket) {
+                        try { WrappedWebSocket[key] = OrigWebSocket[key]; } catch (_) {}
+                    }
+                }
+                window.WebSocket = WrappedWebSocket;
+            }
+        } catch (_) {}
+    }
+    setupIncomingMessageObservers();
+
+    function collectKnownRoomsAndStateMessages() {
+        const rooms = new Map();
+        const users = new Map();
+        const stateMessages = [];
+        const app = window.CW?.application;
+        const userRepo = app?.domainServiceContext?.userService?.userRepository;
+        const userList = userRepo?.getAll?.() || Object.values(userRepo?.entities || {});
+        for (const user of userList) {
+            const uid = cleanNumericId(user?.identity);
+            if (!uid) continue;
+            const uname = String(unwrapNotificationValue(user?.getName?.() ?? user?.name ?? user?.nickname) || '').trim();
+            if (uname) users.set(uid, uname);
+        }
+        for (const [uid, user] of Object.entries(userRepo?.entities || {})) {
+            const cleanUid = cleanNumericId(uid);
+            if (cleanUid && !users.has(cleanUid)) {
+                const uname = String(unwrapNotificationValue(user?.getName?.() ?? user?.name ?? user?.nickname) || '').trim();
+                if (uname) users.set(cleanUid, uname);
+            }
+        }
+        const roomRepo = app?.domainServiceContext?.roomService?.roomRepository;
+        const roomEntries = roomRepo?.getAll
+            ? (roomRepo.getAll() || []).map(entity => [cleanNumericId(entity?.identity), entity])
+            : Object.entries(roomRepo?.entities || {});
+        for (const [rawId, entity] of roomEntries) {
+            const rid = cleanNumericId(entity?.identity ?? rawId);
+            if (!rid) continue;
+            const mateId = cleanNumericId(entity?.getMate?.() ?? entity?.mate);
+            const mateName = mateId ? (users.get(mateId) || '') : '';
+            const name = String(unwrapNotificationValue(entity?.getName?.() ?? entity?.name) || mateName || '').trim();
+            const icon = String(unwrapNotificationValue(entity?.getIcon?.() ?? entity?.iconPath ?? entity?.icon ?? entity?.avatar) || '').trim();
+            const latestMid = cleanNumericId(
+                entity?.latestMessageId ?? entity?.lastMessageId ?? entity?.lastMessage?.identity ?? entity?.latestMessage?.identity
+            );
+            rooms.set(rid, { id: rid, name, mateId, mateName, icon, latestMessageId: latestMid });
+            const embeddedList = entity?.chatList ?? entity?.messages ?? entity?.messageList;
+            if (embeddedList) ingestChatListForRoom(rid, embeddedList);
+        }
+        if (window.RM?.room_dat && typeof window.RM.room_dat === 'object') {
+            for (const [rawId, room] of Object.entries(window.RM.room_dat)) {
+                const rid = cleanNumericId(room?.rid ?? room?.room_id ?? rawId);
+                if (!rid || !room || typeof room !== 'object') continue;
+                const mateId = cleanNumericId(room.aid ?? room.account_id);
+                const mateName = mateId ? (users.get(mateId) || '') : '';
+                const prev = rooms.get(rid);
+                const name = prev?.name || String(unwrapNotificationValue(room.name) || mateName || '').trim();
+                const icon = prev?.icon || String(unwrapNotificationValue(room.icon ?? room.icon_path ?? room.avatar) || '').trim();
+                const latestMid = prev?.latestMessageId || cleanNumericId(room.last_chat_id ?? room.latest_chat_id);
+                rooms.set(rid, { id: rid, name, mateId: prev?.mateId || mateId, mateName: prev?.mateName || mateName, icon, latestMessageId: latestMid });
+                if (room.chat_list) ingestChatListForRoom(rid, room.chat_list);
+                if (room.timeline?.chat_list) ingestChatListForRoom(rid, room.timeline.chat_list);
+            }
+        }
+        const domainCtx = app?.domainServiceContext;
+        if (domainCtx && typeof domainCtx === 'object') {
+            for (const [serviceName, service] of Object.entries(domainCtx)) {
+                if (!/message|chat|timeline/i.test(serviceName) || !service || typeof service !== 'object') continue;
+                for (const repo of Object.values(service)) {
+                    if (!repo || typeof repo !== 'object') continue;
+                    const records = typeof repo.getAll === 'function' ? repo.getAll() : (repo.entities && typeof repo.entities === 'object' ? Object.values(repo.entities) : null);
+                    if (!Array.isArray(records)) continue;
+                    const start = Math.max(0, records.length - 100);
+                    for (let i = start; i < records.length; i++) {
+                        const rec = records[i];
+                        if (!rec || typeof rec !== 'object') continue;
+                        const rid = cleanNumericId(rec.roomId ?? rec.roomIdentity ?? rec.room_id ?? rec.rid);
+                        const mid = cleanNumericId(rec.identity ?? rec.messageId ?? rec.message_id ?? rec.mid ?? rec.id);
+                        if (!rid || !mid) continue;
+                        stateMessages.push({
+                            roomId: rid,
+                            messageId: mid,
+                            accountId: cleanNumericId(rec.accountId ?? rec.userId ?? rec.sender ?? rec.aid),
+                            body: String(unwrapNotificationValue(rec.body ?? rec.message ?? rec.text ?? rec.msg) ?? '')
+                        });
+                    }
+                }
+            }
+        }
+        for (const msg of stateMessages) recordIncomingMessage(msg.roomId, msg.messageId, msg.accountId, msg.body, 0);
+        return { rooms, users };
+    }
+
+    function scoreRoomMatch(room, rawTitle, rawIcon) {
+        if (!room) return 0;
+        let score = 0;
+        const cleanTitle = String(rawTitle || '').replace(/^\[\d+\+?\s*\]\s*/, '').trim();
+        if (cleanTitle) {
+            const titleLower = cleanTitle.toLowerCase();
+            for (const candidateName of [room.name, room.mateName]) {
+                if (!candidateName) continue;
+                const nameLower = candidateName.trim().toLowerCase();
+                if (!nameLower) continue;
+                if (titleLower === nameLower) {
+                    score = Math.max(score, 100);
+                } else if (titleLower === 'chatwork - ' + nameLower || titleLower === nameLower + ' - chatwork') {
+                    score = Math.max(score, 92);
+                } else {
+                    const strippedEllipsis = titleLower.replace(/(?:\.\.\.|…)+$/, '').trim();
+                    if (strippedEllipsis.length >= 4 && nameLower.startsWith(strippedEllipsis)) {
+                        score = Math.max(score, 85);
+                    }
+                }
+            }
+        }
+        if (rawIcon && room.icon) {
+            try {
+                const notifPath = new URL(rawIcon, window.location.href).pathname;
+                const roomPath = new URL(room.icon, window.location.href).pathname;
+                if (notifPath && notifPath.length > 6 && notifPath === roomPath && !/default|blank|ico_default/i.test(notifPath)) {
+                    score += 60;
+                }
+            } catch (_) {}
+        }
+        return score;
+    }
+
+    function scoreBodyMatch(msgBody, notifBody, senderName) {
+        if (typeof msgBody !== 'string' || typeof notifBody !== 'string') return 0;
+        const rawNotif = notifBody.trim();
+        const rawMsg = msgBody.trim();
+        if (!rawNotif || !rawMsg) return 0;
+        const notifVariants = [rawNotif];
+        if (senderName) {
+            const lowerSender = senderName.toLowerCase();
+            for (const sep of [': ', '：', '\n', ' - ']) {
+                if (rawNotif.toLowerCase().startsWith(lowerSender + sep.toLowerCase())) {
+                    const rest = rawNotif.slice(senderName.length + sep.length).trim();
+                    if (rest) notifVariants.push(rest);
+                }
+            }
+        }
+        const msgStrict = normalizeNotificationText(rawMsg, true);
+        const msgSoft = normalizeNotificationText(rawMsg, false);
+        for (const variant of notifVariants) {
+            const withoutEllipsis = variant.replace(/(?:\.\.\.|…)+$/, '').trim();
+            for (const candidate of [variant, withoutEllipsis]) {
+                const bodyStrict = normalizeNotificationText(candidate, true);
+                const bodySoft = normalizeNotificationText(candidate, false);
+                if (bodyStrict && msgStrict) {
+                    if (bodyStrict === msgStrict) return 120;
+                    if (bodyStrict.length >= 3 && (msgStrict.includes(bodyStrict) || bodyStrict.includes(msgStrict))) return 95;
+                }
+                if (bodySoft && msgSoft) {
+                    if (bodySoft === msgSoft) return 110;
+                    if (bodySoft.length >= 3 && (msgSoft.includes(bodySoft) || bodySoft.includes(msgSoft))) return 88;
+                }
+            }
+        }
+        return 0;
+    }
+
+    function parseExplicitTarget(options, notification) {
+        let roomId = '', messageId = '', senderId = '';
+        const sources = [];
+        if (options && typeof options === 'object') {
+            if (options.data && typeof options.data === 'object') sources.push(options.data);
+            sources.push(options);
+        }
+        if (notification && typeof notification === 'object') {
+            if (notification.data && typeof notification.data === 'object') sources.push(notification.data);
+            sources.push(notification);
+        }
+        for (const src of sources) {
+            const url = unwrapNotificationValue(src.url ?? src.link ?? src.href);
+            if (typeof url === 'string') {
+                const hash = getMessageHash(url);
+                if (hash) {
+                    const m = hash.match(/^#!rid(\d+)(?:-(\d+))?$/);
+                    if (m) {
+                        roomId = roomId || m[1];
+                        messageId = messageId || m[2] || '';
+                    }
+                }
+            }
+            roomId = roomId || cleanNumericId(src.room_id ?? src.roomId ?? src.rid ?? src.room);
+            messageId = messageId || cleanNumericId(src.message_id ?? src.messageId ?? src.mid ?? src.chat_id ?? src.chatId);
+            senderId = senderId || cleanNumericId(src.account_id ?? src.accountId ?? src.from_id ?? src.sender_id ?? src.aid);
+            const tag = unwrapNotificationValue(src.tag);
+            if (typeof tag === 'string' && tag.trim()) {
+                const tagMatch = tag.trim().match(/(?:^|\b)(?:#(?:!|_))?rid(\d+)(?:-(\d+))?\b/i)
+                    || tag.trim().match(/^(\d+)-(\d+)$/);
+                if (tagMatch) {
+                    roomId = roomId || tagMatch[1];
+                    messageId = messageId || tagMatch[2] || '';
+                }
+            }
+        }
+        const bodyText = String(notification?.body ?? options?.body ?? '');
+        if (!roomId && bodyText) {
+            const rpMatch = bodyText.match(/\[rp\s+[^\]]*\bto=(\d+)(?:-\d+)?\]/i);
+            if (rpMatch) roomId = rpMatch[1];
+        }
+        return { roomId, messageId, senderId };
+    }
+
+    function resolveNotificationContext(notification, options) {
+        const explicit = parseExplicitTarget(options, notification);
+        let { roomId, messageId, senderId } = explicit;
+        if (roomId && messageId) {
+            return { target: '#!rid' + roomId + '-' + messageId, roomId, messageId, senderId };
+        }
+        const { rooms, users } = collectKnownRoomsAndStateMessages();
+        const rawTitle = String(notification?.title || '').trim();
+        const rawBody = String(notification?.body ?? options?.body ?? '').trim();
+        const rawIcon = String(notification?.icon || options?.icon || options?.avatar || options?.image || '').trim();
+        const popupRid = cleanNumericId(window.CW?.popup?.last_rid ?? window.CW?.popup?.rid ?? window.CW?.popup?.room_id);
+        const now = Date.now();
+
+        let bestEntry = null;
+        let bestScore = 0;
+        for (let i = 0; i < recentIncomingMessages.length; i++) {
+            const msg = recentIncomingMessages[i];
+            if (roomId && msg.roomId !== roomId) continue;
+            if (senderId && msg.accountId && msg.accountId !== senderId) continue;
+            const room = rooms.get(msg.roomId);
+            const senderName = msg.accountId ? (users.get(msg.accountId) || '') : '';
+            let score = 0;
+            if (roomId && msg.roomId === roomId) {
+                score += 120;
+            } else {
+                score += scoreRoomMatch(room, rawTitle, rawIcon);
+                if (senderName && rawTitle && rawTitle.toLowerCase() === senderName.toLowerCase()) score += 75;
+                if (popupRid && msg.roomId === popupRid) score += 55;
+            }
+            const bScore = scoreBodyMatch(msg.body, rawBody, senderName);
+            score += bScore;
+            if (score < 85 && bScore < 88) continue;
+            if (now - msg.capturedAt < 15000) score += 40;
+            if (!msg.usedForNotification) score += 35;
+            // For tied fresh unconsumed messages in the same batch, keep chronological emission order.
+            if (!bestEntry || score > bestScore) {
+                bestScore = score;
+                bestEntry = msg;
+            }
+        }
+        if (bestEntry) {
+            bestEntry.usedForNotification = true;
+            roomId = roomId || bestEntry.roomId;
+            messageId = messageId || bestEntry.messageId;
+            senderId = senderId || bestEntry.accountId;
+        }
+        if (!roomId) {
+            let bestRoom = null;
+            let bestRoomScore = 0;
+            for (const room of rooms.values()) {
+                let rScore = scoreRoomMatch(room, rawTitle, rawIcon);
+                if (popupRid && room.id === popupRid) rScore += 55;
+                if (rScore > bestRoomScore) {
+                    bestRoomScore = rScore;
+                    bestRoom = room;
+                }
+            }
+            if (bestRoom && bestRoomScore >= 85) {
+                roomId = bestRoom.id;
+                messageId = messageId || bestRoom.latestMessageId || '';
+                senderId = senderId || bestRoom.mateId || '';
+            } else if (popupRid) {
+                roomId = popupRid;
+                messageId = messageId || rooms.get(popupRid)?.latestMessageId || '';
+            }
+        } else if (!messageId) {
+            messageId = rooms.get(roomId)?.latestMessageId || '';
+        }
+        const target = roomId ? ('#!rid' + roomId + (messageId ? '-' + messageId : '')) : null;
+        return { target, roomId, messageId, senderId };
+    }
+
+    function registerNativeNotification(notification, target, options) {
         const id = notificationSession + '-' + (++notificationSequence);
-        nativeNotifications.set(id, { notification, target });
+        if (nativeNotifications.size >= 250) {
+            const oldestKey = nativeNotifications.keys().next().value;
+            if (oldestKey !== undefined) nativeNotifications.delete(oldestKey);
+        }
+        const entry = { notification, target, options };
+        nativeNotifications.set(id, entry);
+        if (notification && typeof notification === 'object') {
+            notification.__thkNotificationEntry = entry;
+        }
         return id;
     }
     window.__thk_notificationClosed = function(id) { nativeNotifications.delete(id); };
@@ -80,16 +530,53 @@
         const entry = nativeNotifications.get(id);
         if (!entry) return false;
         nativeNotifications.delete(id);
+        const pinnedTarget = entry.target ? getMessageHash(entry.target) : null;
+        const pinnedRoomId = pinnedTarget?.match(/^#!rid(\d+)/)?.[1] || '';
         const event = new Event('click', { cancelable: true });
-        entry.notification.dispatchEvent(event);
-        if (!event.defaultPrevented && entry.target) window.__thk_navigateToMessage(entry.target);
+        const origSelectRoom = pinnedRoomId && typeof window.RL?.selectRoom === 'function' ? window.RL.selectRoom : null;
+        if (origSelectRoom) {
+            window.RL.selectRoom = function(rid) {
+                if (String(rid) === pinnedRoomId) return origSelectRoom.apply(this, arguments);
+            };
+        }
+        try {
+            entry.notification.dispatchEvent(event);
+        } finally {
+            if (origSelectRoom && window.RL) window.RL.selectRoom = origSelectRoom;
+        }
+        // Always navigate to this notification's captured room/message so Chatwork's
+        // singleton onclick handler cannot redirect earlier toasts to the latest room.
+        if (pinnedTarget) {
+            window.__thk_navigateToMessage(pinnedTarget);
+        }
         return true;
     };
+    function refreshNotificationEntryTarget(notification, options) {
+        const entry = notification?.__thkNotificationEntry;
+        if (!entry || (entry.target && /-\d+$/.test(entry.target))) return;
+        const resolved = resolveNotificationContext(notification, options);
+        if (resolved.target && (!entry.target || /-\d+$/.test(resolved.target))) {
+            entry.target = getMessageHash(resolved.target) || entry.target;
+        }
+    }
     function initializeNativeNotification(notification, options) {
         const events = new EventTarget();
-        notification.onclick = null;
+        let onclickHandler = null;
+        Object.defineProperty(notification, 'onclick', {
+            configurable: true,
+            enumerable: true,
+            get: function() { return onclickHandler; },
+            set: function(fn) {
+                onclickHandler = typeof fn === 'function' ? fn : null;
+                if (onclickHandler) refreshNotificationEntryTarget(notification, options);
+            }
+        });
         notification.onclose = null;
-        notification.addEventListener = events.addEventListener.bind(events);
+        const boundAddEventListener = events.addEventListener.bind(events);
+        notification.addEventListener = function(type, listener, opts) {
+            if (type === 'click') refreshNotificationEntryTarget(notification, options);
+            return boundAddEventListener(type, listener, opts);
+        };
         notification.removeEventListener = events.removeEventListener.bind(events);
         notification.dispatchEvent = function(event) {
             const handler = notification['on' + event.type];
@@ -100,15 +587,15 @@
         };
         notification.close = notification.cancel = function() {};
         notification.show = function() {};
-        const target = getNotificationTarget(options);
-        const icon = getNotificationAvatar(notification, options);
-        window.__chatwork_ipc.notify(notification.title, notification.body, notification, target, icon);
+        const context = resolveNotificationContext(notification, options);
+        const icon = getNotificationAvatar(notification, options, context.senderId);
+        window.__chatwork_ipc.notify(notification.title, notification.body, notification, context.target, icon, options);
     }
-    function getNotificationAvatar(notification, options) {
-        const unwrap = input => input?.getValue?.() ?? input?.value ?? input;
+    function getNotificationAvatar(notification, options, inferredSenderId) {
+        const unwrap = unwrapNotificationValue;
         const data = options?.data || {};
         const sender = unwrap(data.account_id ?? data.accountId ?? data.from_id ?? data.sender_id ?? data.aid
-            ?? options?.account_id ?? options?.accountId ?? options?.sender_id);
+            ?? options?.account_id ?? options?.accountId ?? options?.sender_id ?? inferredSenderId);
         const user = window.CW?.application?.domainServiceContext?.userService?.userRepository?.entities?.[sender];
         // Prefer the sender's profile to an icon for the room or the application.
         const candidates = [user?.profile?.profileImage, user?.avatarUrl, user?.avatar,
@@ -131,15 +618,8 @@
         }
         return '';
     }
-    function getNotificationTarget(options) {
-        if (!options || typeof options !== 'object') return null;
-        const data = options.data || options;
-        const url = data.url || data.link || data.href || options.url;
-        if (typeof url === 'string' && getMessageHash(url)) return url;
-        const room = data.room_id ?? data.roomId ?? data.rid;
-        const message = data.message_id ?? data.messageId ?? data.mid;
-        if (/^\d+$/.test(String(room)) && /^\d+$/.test(String(message))) return '#!rid' + room + '-' + message;
-        return null;
+    function getNotificationTarget(options, notification) {
+        return resolveNotificationContext(notification, options).target;
     }
 
     // ── 3. Chatwork Desktop window.NotificationAPI Hook ───────────────────────
@@ -353,25 +833,56 @@
             return match ? '#!rid' + match[1] + (match[2] ? '-' + match[2] : '') : null;
         } catch(error) { return null; }
     }
+    function getRoomIdFromHash(hash) {
+        return typeof hash === 'string' ? hash.match(/^#(?:!|_)rid(\d+)/)?.[1] || '' : '';
+    }
+    function findMessageElement(messageId) {
+        return document.getElementById?.('_messageId' + messageId)
+            || document.getElementById?.('_message' + messageId)
+            || document.querySelector?.('[data-mid="' + messageId + '"], [data-message-id="' + messageId + '"]');
+    }
     let messageNavigation = 0;
     window.__thk_navigateToMessage = function(href) {
         const hash = getMessageHash(href);
         if (!hash) return false;
+        const match = hash.match(/^#!rid(\d+)(?:-(\d+))?$/);
+        const roomId = match?.[1] || '';
+        const messageId = match?.[2] || '';
         const navigation = ++messageNavigation;
-        if (window.location.hash === hash) {
-            window.dispatchEvent(new HashChangeEvent('hashchange'));
-        } else {
-            window.location.hash = hash;
+        const applyHash = () => {
+            if (window.location.hash === hash) {
+                window.dispatchEvent(new HashChangeEvent('hashchange'));
+            } else {
+                window.location.hash = hash;
+            }
+        };
+        applyHash();
+        if (typeof Promise === 'function') {
+            Promise.resolve().then(() => {
+                if (navigation !== messageNavigation) return;
+                const currentRoom = getRoomIdFromHash(window.location.hash);
+                if (currentRoom && currentRoom !== roomId) applyHash();
+            });
         }
-        const messageId = hash.match(/-(\d+)$/)?.[1];
         if (messageId) {
             let attempts = 0;
             const scrollToMessage = () => {
-                if (navigation !== messageNavigation || window.location.hash !== hash) return;
-                const message = document.getElementById('_message' + messageId)
-                    || document.querySelector('[data-mid="' + messageId + '"], [data-message-id="' + messageId + '"]');
-                if (message) message.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                else if (++attempts < 50) setTimeout(scrollToMessage, 100);
+                if (navigation !== messageNavigation) return;
+                // Chatwork normalizes #!rid<room>-<msg> to #!rid<room> after selecting the room.
+                const currentRoom = getRoomIdFromHash(window.location.hash);
+                if (currentRoom && currentRoom !== roomId) return;
+                const message = findMessageElement(messageId);
+                if (message) {
+                    message.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    if (message.classList?.add && message.classList?.remove) {
+                        message.classList.remove('thk-notification-target-message');
+                        void message.offsetWidth;
+                        message.classList.add('thk-notification-target-message');
+                        setTimeout(() => message.classList?.remove?.('thk-notification-target-message'), 2600);
+                    }
+                } else if (++attempts < 60) {
+                    setTimeout(scrollToMessage, 100);
+                }
             };
             setTimeout(scrollToMessage, 100);
         }
@@ -427,6 +938,17 @@
         const style = document.createElement('style');
         style.id = 'thk-custom-styles';
         style.textContent = `
+/* ── Notification Target Message Highlight ─────────────────────────────── */
+@keyframes thkNotificationPulse {
+    0% { background-color: rgba(251, 191, 36, 0.36); box-shadow: inset 3px 0 0 #f59e0b; }
+    65% { background-color: rgba(251, 191, 36, 0.2); box-shadow: inset 3px 0 0 #f59e0b; }
+    100% { background-color: transparent; box-shadow: none; }
+}
+.thk-notification-target-message {
+    animation: thkNotificationPulse 2.5s ease-out !important;
+    border-radius: 4px !important;
+}
+
 /* ── Ensure Chatwork Toolbar Container does not clip custom items ────────── */
 #_chatSendTool, .chatSendTool, .thk-native-compose-tools {
     display: flex !important;

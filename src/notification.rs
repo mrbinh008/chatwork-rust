@@ -192,39 +192,14 @@ pub fn show_notification(
 
     #[cfg(windows)]
     {
-        use winrt_notification::{Duration, IconCrop, Toast};
-        let build = |app_id: &str, with_avatar: bool| {
-            let mut toast = Toast::new(app_id).title(&safe_title).text1(&safe_body)
-                .add_button("Mở THK-Chat", "open").duration(Duration::Short);
-            if with_avatar && !icon_to_use.is_empty() {
-                toast = toast.icon(std::path::Path::new(&icon_to_use), IconCrop::Circular, "Avatar");
-            }
-            let activate_proxy = proxy.clone(); let activate_id = id.clone(); let activate_target = target.clone();
-            toast.on_activated(move |action| {
-                let response = action.map(notify_rust::NotificationResponse::Action)
-                    .unwrap_or(notify_rust::NotificationResponse::Default);
-                if let Some(proxy) = &activate_proxy {
-                    let _ = proxy.send_event(UserEvent::NotificationInteraction {
-                        id:activate_id.clone(), target:activate_target.clone(), activated:is_notification_activation(&response),
-                    });
-                }
-                Ok(())
-            }).on_dismissed({
-                let proxy = proxy.clone(); let id = id.clone(); let target = target.clone();
-                move |_| {
-                    if let Some(proxy) = &proxy {
-                        let _ = proxy.send_event(UserEvent::NotificationInteraction { id:id.clone(), target:target.clone(), activated:false });
-                    }
-                    Ok(())
-                }
-            })
-        };
-        if let Err(error) = build("THK", true).show() {
-            warn!("Notification with avatar failed ({:?}), retrying without image", error);
-            if let Err(error) = build(Toast::POWERSHELL_APP_ID, false).show() {
-                warn!("Failed to show notification: {:?}", error);
-            }
-        }
+        dispatch_windows_toast(WindowsToastJob {
+            safe_title,
+            safe_body,
+            icon_to_use,
+            proxy,
+            id,
+            target,
+        });
     }
     #[cfg(target_os = "macos")]
     {
@@ -243,11 +218,19 @@ pub fn show_notification(
                 if let Some(proxy) = proxy {
                     std::thread::spawn(move || {
                         let _ = h.wait_for_response(move |response: &notify_rust::NotificationResponse| {
-                            let _ = proxy.send_event(UserEvent::NotificationInteraction {
-                                id,
-                                target,
-                                activated: is_notification_activation(response),
-                            });
+                            if is_notification_activation(response) {
+                                let _ = proxy.send_event(UserEvent::NotificationInteraction {
+                                    id,
+                                    target,
+                                    activated: true,
+                                });
+                            } else if is_notification_user_dismissal(response) {
+                                let _ = proxy.send_event(UserEvent::NotificationInteraction {
+                                    id,
+                                    target,
+                                    activated: false,
+                                });
+                            }
                         });
                     });
                 }
@@ -358,9 +341,129 @@ fn cache_notification_avatar(address: &str) -> Option<std::path::PathBuf> {
     let _ = fs::remove_file(&pending);
     result
 }
+#[cfg(windows)]
+struct WindowsToastJob {
+    safe_title: String,
+    safe_body: String,
+    icon_to_use: String,
+    proxy: Option<EventLoopProxy<UserEvent>>,
+    id: Option<String>,
+    target: Option<String>,
+}
+
+#[cfg(windows)]
+fn should_close_windows_toast(reason: Option<winrt_notification::ToastDismissalReason>) -> bool {
+    matches!(reason, Some(winrt_notification::ToastDismissalReason::UserCanceled))
+}
+
+#[cfg(windows)]
+fn dispatch_windows_toast(job: WindowsToastJob) {
+    use std::collections::VecDeque;
+    use std::sync::{mpsc, Mutex, OnceLock};
+    use winrt_notification::{Duration, IconCrop, Toast};
+
+    static WORKER: OnceLock<Mutex<mpsc::Sender<WindowsToastJob>>> = OnceLock::new();
+    let sender = WORKER.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<WindowsToastJob>();
+        std::thread::Builder::new()
+            .name("thk-winrt-toast".into())
+            .spawn(move || {
+                unsafe {
+                    use windows_sys::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+                    let _ = CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED as u32);
+                }
+                let mut active_toasts: VecDeque<Toast> = VecDeque::with_capacity(128);
+                while let Ok(job) = rx.recv() {
+                    let build = |app_id: &str, with_avatar: bool| {
+                        let mut toast = Toast::new(app_id)
+                            .title(&job.safe_title)
+                            .text1(&job.safe_body)
+                            .add_button("Mở THK-Chat", "open")
+                            .duration(Duration::Short);
+                        if with_avatar && !job.icon_to_use.is_empty() {
+                            toast = toast.icon(std::path::Path::new(&job.icon_to_use), IconCrop::Circular, "Avatar");
+                        }
+                        let activate_proxy = job.proxy.clone();
+                        let activate_id = job.id.clone();
+                        let activate_target = job.target.clone();
+                        toast
+                            .on_activated(move |action| {
+                                let response = action
+                                    .map(notify_rust::NotificationResponse::Action)
+                                    .unwrap_or(notify_rust::NotificationResponse::Default);
+                                if let Some(proxy) = &activate_proxy {
+                                    let _ = proxy.send_event(UserEvent::NotificationInteraction {
+                                        id: activate_id.clone(),
+                                        target: activate_target.clone(),
+                                        activated: is_notification_activation(&response),
+                                    });
+                                }
+                                Ok(())
+                            })
+                            .on_dismissed({
+                                let proxy = job.proxy.clone();
+                                let id = job.id.clone();
+                                let target = job.target.clone();
+                                move |reason| {
+                                    if should_close_windows_toast(reason) {
+                                        if let Some(proxy) = &proxy {
+                                            let _ = proxy.send_event(UserEvent::NotificationInteraction {
+                                                id: id.clone(),
+                                                target: target.clone(),
+                                                activated: false,
+                                            });
+                                        }
+                                    }
+                                    Ok(())
+                                }
+                            })
+                    };
+                    let shown = {
+                        let toast = build("THK", true);
+                        match toast.show() {
+                            Ok(()) => Some(toast),
+                            Err(error) => {
+                                warn!("Notification with avatar failed ({:?}), retrying without image", error);
+                                let fallback = build(Toast::POWERSHELL_APP_ID, false);
+                                match fallback.show() {
+                                    Ok(()) => Some(fallback),
+                                    Err(error) => {
+                                        warn!("Failed to show notification: {:?}", error);
+                                        None
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    if let Some(toast) = shown {
+                        while active_toasts.len() >= 128 {
+                            active_toasts.pop_front();
+                        }
+                        active_toasts.push_back(toast);
+                    }
+                }
+            })
+            .expect("Failed to start Windows notification worker");
+        Mutex::new(tx)
+    });
+    if let Ok(guard) = sender.lock() {
+        let _ = guard.send(job);
+    }
+}
+
 fn is_notification_activation(response: &notify_rust::NotificationResponse) -> bool {
     matches!(response, notify_rust::NotificationResponse::Default)
         || matches!(response, notify_rust::NotificationResponse::Action(action) if action == "open" || action == "default")
+}
+
+#[allow(dead_code)]
+fn is_notification_user_dismissal(response: &notify_rust::NotificationResponse) -> bool {
+    matches!(
+        response,
+        notify_rust::NotificationResponse::Closed(
+            notify_rust::CloseReason::Dismissed | notify_rust::CloseReason::CloseAction
+        )
+    )
 }
 
 /// Format unread count for badge/title display
@@ -410,5 +513,18 @@ mod tests {
             assert!(!is_notification_activation(&Response::Closed(reason)));
         }
         assert!(!is_notification_activation(&Response::Action("other".into())));
+        assert!(is_notification_user_dismissal(&Response::Closed(CloseReason::Dismissed)));
+        assert!(is_notification_user_dismissal(&Response::Closed(CloseReason::CloseAction)));
+        assert!(!is_notification_user_dismissal(&Response::Closed(CloseReason::Expired)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_toast_timeout_preserves_notification_for_action_center() {
+        use winrt_notification::ToastDismissalReason;
+        assert!(should_close_windows_toast(Some(ToastDismissalReason::UserCanceled)));
+        assert!(!should_close_windows_toast(Some(ToastDismissalReason::TimedOut)));
+        assert!(!should_close_windows_toast(Some(ToastDismissalReason::ApplicationHidden)));
+        assert!(!should_close_windows_toast(None));
     }
 }

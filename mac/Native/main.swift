@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var updater: NativeUpdater!
     private let defaults = UserDefaults.standard
     private var zoom: Double = 1
+    private var hasLoadedChat = false
+    private var pendingNotificationScripts: [String] = []
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -98,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
         let notifications = UNUserNotificationCenter.current()
         notifications.delegate = self
+        let category = UNNotificationCategory(identifier: "CHAT_MESSAGE", actions: [], intentIdentifiers: [], options: [.customDismissAction])
+        notifications.setNotificationCategories([category])
         notifications.requestAuthorization(options: [.alert, .badge, .sound]) { _, error in
             if let error = error { NSLog("Notification authorization: %@", error.localizedDescription) }
         }
@@ -174,9 +178,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     @objc func showWindow() {
-        window?.deminiaturize(nil)
-        window?.makeKeyAndOrderFront(nil)
+        if NSApp.isHidden { NSApp.unhide(nil) }
         NSApp.activate(ignoringOtherApps: true)
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
+        window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
     }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func about() { NSApp.orderFrontStandardAboutPanel(nil) }
@@ -211,6 +217,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         evaluate("document.documentElement.style.zoom = \(zoom);")
     }
     private func evaluate(_ script: String) { webView?.evaluateJavaScript(script, completionHandler: nil) }
+    private func evaluateWhenChatReady(_ script: String) {
+        if hasLoadedChat, let url = webView?.url, WebPolicy.isChat(url) {
+            evaluate(script)
+        } else {
+            if pendingNotificationScripts.count >= 25 { pendingNotificationScripts.removeFirst() }
+            pendingNotificationScripts.append(script)
+        }
+    }
     private func showError(_ title: String, _ error: Error) {
         let alert = NSAlert(); alert.messageText = title; alert.informativeText = error.localizedDescription
         if let window = window { alert.beginSheetModal(for: window) } else { alert.runModal() }
@@ -336,11 +350,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         return popup
     }
     func webViewDidClose(_ webView: WKWebView) { popups.first { $0.contentView === webView }?.close() }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if webView === self.webView { hasLoadedChat = false }
+        webView.reload()
+    }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView === self.webView else { return }
         evaluate("document.documentElement.style.zoom = \(zoom);")
-        if let url = webView.url, WebPolicy.isChat(url) { defaults.set(url.absoluteString, forKey: "native.lastURL") }
+        if let url = webView.url, WebPolicy.isChat(url) {
+            defaults.set(url.absoluteString, forKey: "native.lastURL")
+            hasLoadedChat = true
+            if !pendingNotificationScripts.isEmpty {
+                let scripts = pendingNotificationScripts
+                pendingNotificationScripts.removeAll()
+                for script in scripts { evaluate(script) }
+            }
+        }
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code != NSURLErrorCancelled { showError("Cannot open Chatwork", error) }
@@ -370,11 +395,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         content.title = payload["title"] as? String ?? "THK-Chat"
         content.body = payload["body"] as? String ?? ""
         content.sound = .default
-        content.userInfo = ["id": payload["id"] as? String ?? "", "target": payload["target"] as? String ?? ""]
+        let rawId = (payload["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawTarget = (payload["target"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        content.userInfo = ["id": rawId, "target": rawTarget]
         content.categoryIdentifier = "CHAT_MESSAGE"
-        let category = UNNotificationCategory(identifier: "CHAT_MESSAGE", actions: [], intentIdentifiers: [], options: [.customDismissAction])
-        UNUserNotificationCenter.current().setNotificationCategories([category])
-        let identifier = payload["id"] as? String ?? UUID().uuidString
+        let identifier = rawId.isEmpty ? UUID().uuidString : rawId
         func deliver(directory: URL? = nil) {
             let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
             UNUserNotificationCenter.current().add(request) { error in
@@ -406,20 +431,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }.resume()
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
+        completionHandler([.banner, .list, .sound])
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { completionHandler(); return }
             let info = response.notification.request.content.userInfo
-            let id = WebPolicy.scriptValue(info["id"] as? String ?? "")
+            let rawId = info["id"] as? String ?? ""
+            let rawTarget = info["target"] as? String ?? ""
             if response.actionIdentifier == UNNotificationDismissActionIdentifier {
-                self.evaluate("window.__thk_notificationClosed?.(\(id));")
+                let cleanId = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleanId.isEmpty {
+                    self.evaluateWhenChatReady("window.__thk_notificationClosed?.(\(WebPolicy.scriptValue(cleanId)));")
+                }
             } else {
                 self.showWindow()
-                let target = info["target"] as? String ?? ""
-                if target.hasPrefix("#!rid") || target.hasPrefix("#_rid") {
-                    self.evaluate("if (!window.__thk_notificationClicked?.(\(id))) window.__thk_navigateToMessage?.(\(WebPolicy.scriptValue(target)));")
+                if let script = WebPolicy.notificationActivationScript(id: rawId, target: rawTarget) {
+                    self.evaluateWhenChatReady(script)
                 }
             }
             completionHandler()

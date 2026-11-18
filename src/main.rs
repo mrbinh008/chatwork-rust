@@ -268,9 +268,7 @@ fn main() {
                             button: tray_icon::MouseButton::Left,
                             ..
                         } => {
-                            window.set_visible(true);
-                            window.set_minimized(false);
-                            window.set_focus();
+                            present_main_window(&window);
                         }
                         _ => {}
                     }
@@ -388,9 +386,7 @@ fn handle_menu_event(
             window.set_visible(false);
         }
         TRAY_SHOW => {
-            window.set_visible(true);
-            window.set_minimized(false);
-            window.set_focus();
+            present_main_window(window);
         }
         VIEW_ZOOM_IN | TRAY_ZOOM_IN => {
             let zoom = zoom_adjust(state, ZOOM_STEP);
@@ -553,18 +549,9 @@ fn handle_user_event(
         }
         UserEvent::NotificationInteraction { id, target, activated } => {
             if activated {
-                window.set_visible(true);
-                window.set_minimized(false);
-                window.set_focus();
+                present_main_window(window);
             }
-            if let Some(id) = id {
-                let id = serde_json::to_string(&id).expect("Notification ID is serializable");
-                let target = serde_json::to_string(&target).expect("Notification target is serializable");
-                let script = if activated {
-                    format!("if (!window.__thk_notificationClicked?.({id}) && {target}) window.__thk_navigateToMessage?.({target});")
-                } else {
-                    format!("window.__thk_notificationClosed?.({id});")
-                };
+            if let Some(script) = build_notification_interaction_script(id.as_deref(), target.as_deref(), activated) {
                 let _ = webview.evaluate_script(&script);
             }
         }
@@ -584,9 +571,7 @@ fn handle_user_event(
             apply_zoom(webview, 1.0);
         }
         UserEvent::ShowWindow => {
-            window.set_visible(true);
-            window.set_minimized(false);
-            window.set_focus();
+            present_main_window(window);
         }
         UserEvent::HideWindow => {
             window.set_visible(false);
@@ -618,6 +603,116 @@ fn handle_user_event(
             save_config_now(state);
             *control_flow = ControlFlow::Exit;
         }
+    }
+}
+
+fn present_main_window(window: &Window) {
+    window.set_visible(true);
+    window.set_minimized(false);
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+        };
+        let hwnd = window.hwnd() as _;
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        } else {
+            ShowWindow(hwnd, SW_SHOW);
+        }
+        SetForegroundWindow(hwnd);
+    }
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc::runtime::{Class, Object, YES};
+        use objc::{msg_send, sel, sel_impl};
+        if let Some(cls) = Class::get("NSApplication") {
+            let app: *mut Object = msg_send![cls, sharedApplication];
+            if !app.is_null() {
+                let nil: *mut Object = std::ptr::null_mut();
+                let _: () = msg_send![app, unhide: nil];
+                let _: () = msg_send![app, activateIgnoringOtherApps: YES];
+            }
+        }
+    }
+    window.set_focus();
+}
+
+fn normalize_message_target(raw: Option<&str>) -> Option<String> {
+    let trimmed = raw?.trim();
+    let rest = trimmed.strip_prefix("#!rid").or_else(|| trimmed.strip_prefix("#_rid"))?;
+    let mut parts = rest.split('-');
+    let room = parts.next()?;
+    if room.is_empty() || !room.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    match (parts.next(), parts.next()) {
+        (None, None) => Some(format!("#!rid{room}")),
+        (Some(msg), None) if !msg.is_empty() && msg.chars().all(|c| c.is_ascii_digit()) => {
+            Some(format!("#!rid{room}-{msg}"))
+        }
+        _ => None,
+    }
+}
+
+fn build_notification_interaction_script(
+    id: Option<&str>,
+    target: Option<&str>,
+    activated: bool,
+) -> Option<String> {
+    let clean_id = id.map(str::trim).filter(|s| !s.is_empty());
+    let clean_target = normalize_message_target(target);
+    if !activated {
+        let id_json = serde_json::to_string(clean_id?).ok()?;
+        return Some(format!("window.__thk_notificationClosed?.({id_json});"));
+    }
+    match (clean_id, clean_target) {
+        (Some(id_str), Some(target_str)) => {
+            let id_json = serde_json::to_string(id_str).ok()?;
+            let target_json = serde_json::to_string(&target_str).ok()?;
+            Some(format!(
+                "if (!window.__thk_notificationClicked?.({id_json})) window.__thk_navigateToMessage?.({target_json});"
+            ))
+        }
+        (Some(id_str), None) => {
+            let id_json = serde_json::to_string(id_str).ok()?;
+            Some(format!("window.__thk_notificationClicked?.({id_json});"))
+        }
+        (None, Some(target_str)) => {
+            let target_json = serde_json::to_string(&target_str).ok()?;
+            Some(format!("window.__thk_navigateToMessage?.({target_json});"))
+        }
+        (None, None) => None,
+    }
+}
+
+#[cfg(test)]
+mod notification_script_tests {
+    use super::*;
+
+    #[test]
+    fn activation_script_invokes_click_handler_even_without_explicit_target() {
+        assert_eq!(
+            build_notification_interaction_script(Some("toast-1"), None, true).as_deref(),
+            Some("window.__thk_notificationClicked?.(\"toast-1\");")
+        );
+        assert_eq!(
+            build_notification_interaction_script(Some("toast-2"), Some("#_rid12-34"), true).as_deref(),
+            Some("if (!window.__thk_notificationClicked?.(\"toast-2\")) window.__thk_navigateToMessage?.(\"#!rid12-34\");")
+        );
+        assert_eq!(
+            build_notification_interaction_script(None, Some("#!rid99-100"), true).as_deref(),
+            Some("window.__thk_navigateToMessage?.(\"#!rid99-100\");")
+        );
+        assert_eq!(
+            build_notification_interaction_script(Some("toast-3"), Some("javascript:alert(1)"), true).as_deref(),
+            Some("window.__thk_notificationClicked?.(\"toast-3\");")
+        );
+        assert_eq!(
+            build_notification_interaction_script(Some("toast-4"), Some("#!rid12-34"), false).as_deref(),
+            Some("window.__thk_notificationClosed?.(\"toast-4\");")
+        );
+        assert_eq!(build_notification_interaction_script(None, None, true), None);
     }
 }
 

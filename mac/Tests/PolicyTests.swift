@@ -21,12 +21,20 @@ struct PolicyTests {
         let encoded = WebPolicy.scriptValue(text)
         let decoded = try! JSONSerialization.jsonObject(with: Data(encoded.utf8), options: [.fragmentsAllowed]) as! String
         precondition(decoded == text)
+        precondition(WebPolicy.messageTarget("#!rid123-456") == "#!rid123-456")
+        precondition(WebPolicy.messageTarget("#_rid123") == "#!rid123")
+        precondition(WebPolicy.messageTarget("javascript:alert(1)") == nil)
+        precondition(WebPolicy.messageTarget("#!rid123-abc") == nil)
+        precondition(WebPolicy.notificationActivationScript(id: "toast-1", target: "") == "window.__thk_notificationClicked?.(\"toast-1\");")
+        precondition(WebPolicy.notificationActivationScript(id: "toast-2", target: "#_rid11-22") == "if (!window.__thk_notificationClicked?.(\"toast-2\")) window.__thk_navigateToMessage?.(\"#!rid11-22\");")
+        precondition(WebPolicy.notificationActivationScript(id: "", target: "#!rid99-100") == "window.__thk_navigateToMessage?.(\"#!rid99-100\");")
+        precondition(WebPolicy.notificationActivationScript(id: "", target: "") == nil)
         let notificationIcon = URL(fileURLWithPath: "assets/AppIcon.icns")
         guard let iconSource = CGImageSourceCreateWithURL(notificationIcon as CFURL, nil) else {
             preconditionFailure("The macOS notification app icon must decode")
         }
         precondition(CGImageSourceGetCount(iconSource) > 0)
         precondition(CGImageSourceCreateImageAtIndex(iconSource, 0, nil) != nil)
-        print("Swift URL policy, version comparison, IPC escaping and notification icon decoding checks passed.")
+        print("Swift URL policy, version comparison, IPC escaping, notification activation and icon decoding checks passed.")
     }
 }

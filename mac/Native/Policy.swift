@@ -29,4 +29,29 @@ enum WebPolicy {
               let text = String(data: data, encoding: .utf8) else { return "null" }
         return text
     }
+
+    static func messageTarget(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("#!rid") || trimmed.hasPrefix("#_rid") else { return nil }
+        let body = String(trimmed.dropFirst(5))
+        let parts = body.split(separator: "-", omittingEmptySubsequences: false)
+        guard (parts.count == 1 || parts.count == 2),
+              parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy({ $0.isASCII && $0.isNumber }) }) else { return nil }
+        return "#!rid" + body
+    }
+
+    static func notificationActivationScript(id: String, target: String) -> String? {
+        let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTarget = messageTarget(target)
+        switch (!cleanId.isEmpty, cleanTarget) {
+        case (true, let resolvedTarget?):
+            return "if (!window.__thk_notificationClicked?.(\(scriptValue(cleanId)))) window.__thk_navigateToMessage?.(\(scriptValue(resolvedTarget)));"
+        case (true, nil):
+            return "window.__thk_notificationClicked?.(\(scriptValue(cleanId)));"
+        case (false, let resolvedTarget?):
+            return "window.__thk_navigateToMessage?.(\(scriptValue(resolvedTarget)));"
+        case (false, nil):
+            return nil
+        }
+    }
 }

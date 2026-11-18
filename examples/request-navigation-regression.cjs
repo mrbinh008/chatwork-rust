@@ -131,4 +131,108 @@ assert.equal(messages.at(-1).payload.icon,null,'Missing avatars do not suppress 
 window.__thkToolkit={resolveAvatarUrl:()=>''};
 new navContext.NativeNotificationPolyfill('Invalid avatar',{icon:'invalid'});
 assert.equal(messages.at(-1).payload.icon,null,'Rejected avatars do not resolve to the current chat page');
+delete window.__thkToolkit;
+
+// Scrolling still completes when Chatwork normalizes #!rid<room>-<msg> to #!rid<room>.
+window.__thk_navigateToMessage('#!rid123-999999999999999999');
+location.hash = '#!rid123';
+while (timers.length) timers.shift()();
+assert.equal(scrolls, 2, 'Normalized room hash still scrolls to the target message');
+
+// Multiple notifications without options.data resolve each toast's own room + message
+// and ignore Chatwork's singleton onclick pointing at the last notification's room.
+window.CW = {
+    popup: { last_rid: '' },
+    application: {
+        domainServiceContext: {
+            roomService: {
+                roomRepository: {
+                    entities: {
+                        '501': { identity: { value: '501' }, name: { value: 'Backend Team' } },
+                        '502': { identity: { value: '502' }, name: { value: 'Frontend Team' } },
+                        '503': { identity: { value: '503' }, name: { value: 'QA Team' } }
+                    }
+                }
+            },
+            userService: {
+                userRepository: {
+                    entities: {
+                        '101': { identity: { value: '101' }, name: { value: 'Alice' }, profile: { profileImage: { value: 'avatar/sender-101.png' } } },
+                        '202': { identity: { value: '202' }, name: { value: 'Bob' }, profile: { profileImage: { value: { url: 'https://appdata.chatwork.com/avatar/sender-202.jpg' } } } }
+                    }
+                }
+            }
+        }
+    }
+};
+let selectedByLegacyRouter = '';
+window.RL = { selectRoom: rid => { selectedByLegacyRouter = String(rid); location.hash = '#!rid' + rid; } };
+window.__thk_recordIncomingPayload({
+    result: {
+        update_info: {
+            room_dat: {
+                '501': { chat_list: [{ id: '9001', aid: '101', msg: '[To:999] Alice\nPlease review API schema', tm: 1700000001 }] },
+                '502': { chat_list: [{ id: '9002', aid: '202', msg: '[info][title]Deploy[/title]Staging build ready[/info]', tm: 1700000002 }] },
+                '503': { chat_list: [{ id: '9003', aid: '101', msg: 'Regression suite green', tm: 1700000003 }] }
+            }
+        }
+    }
+});
+let singletonLastRoom = '501';
+window.CW.popup.last_rid = '501';
+const multi1 = new navContext.NativeNotificationPolyfill('Backend Team', { body: 'Alice: Please review API schema', tag: 'chatwork' });
+multi1.onclick = e => { e.preventDefault(); window.RL.selectRoom(singletonLastRoom); };
+const multi1Payload = messages.at(-1).payload;
+
+singletonLastRoom = '502';
+window.CW.popup.last_rid = '502';
+const multi2 = new navContext.NativeNotificationPolyfill('Frontend Team', { body: 'Deploy Staging build ready', tag: 'chatwork' });
+multi2.onclick = e => { e.preventDefault(); window.RL.selectRoom(singletonLastRoom); };
+const multi2Payload = messages.at(-1).payload;
+
+singletonLastRoom = '503';
+window.CW.popup.last_rid = '503';
+const multi3 = new navContext.NativeNotificationPolyfill('QA Team', { body: 'Regression suite green', tag: 'chatwork' });
+multi3.onclick = e => { e.preventDefault(); window.RL.selectRoom(singletonLastRoom); };
+const multi3Payload = messages.at(-1).payload;
+
+assert.equal(multi1Payload.target, '#!rid501-9001', 'First notification captures its exact room and message');
+assert.equal(multi1Payload.icon, 'https://appdata.chatwork.com/avatar/sender-101.png', 'First notification resolves sender avatar from incoming message');
+assert.equal(multi2Payload.target, '#!rid502-9002', 'Second notification captures its exact room and message');
+assert.equal(multi2Payload.icon, 'https://appdata.chatwork.com/avatar/sender-202.jpg', 'Second notification resolves sender avatar from incoming message');
+assert.equal(multi3Payload.target, '#!rid503-9003', 'Third notification captures its exact room and message');
+
+// Clicking the FIRST notification after 3 notifications arrived must open Room 501 Message 9001, NOT Room 503!
+window.__thk_notificationClicked(multi1Payload.id);
+assert.equal(location.hash, '#!rid501-9001', 'Clicking earlier notification opens its own message instead of the latest notification');
+assert.notEqual(selectedByLegacyRouter, '503', 'Legacy singleton room selector is blocked from hijacking to the last room');
+
+window.__thk_notificationClicked(multi2Payload.id);
+assert.equal(location.hash, '#!rid502-9002', 'Clicking second notification opens second message');
+
+// Duplicate short messages in the same room map to distinct message IDs in arrival order.
+window.__thk_recordIncomingPayload({
+    room_dat: {
+        '501': {
+            chat_list: [
+                { id: '9010', aid: '101', msg: 'OK' },
+                { id: '9011', aid: '202', msg: 'OK' }
+            ]
+        }
+    }
+});
+new navContext.NativeNotificationPolyfill('Backend Team', { body: 'OK' });
+assert.equal(messages.at(-1).payload.target, '#!rid501-9010');
+new navContext.NativeNotificationPolyfill('Backend Team', { body: 'OK' });
+assert.equal(messages.at(-1).payload.target, '#!rid501-9011');
+
+// Wrapped DDD value objects and tag room/message identifiers are unwrapped properly.
+new navContext.NativeNotificationPolyfill('Wrapped IDs', {
+    data: { roomId: { value: '77' }, messageId: { getValue: () => '777' } }
+});
+assert.equal(messages.at(-1).payload.target, '#!rid77-777');
+new navContext.NativeNotificationPolyfill('Tag IDs', { tag: 'rid88-888' });
+assert.equal(messages.at(-1).payload.target, '#!rid88-888');
+while (timers.length) timers.shift()();
+
 console.log('Leave request, message navigation and sender avatar regression checks passed.');
