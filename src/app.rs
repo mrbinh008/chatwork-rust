@@ -9,6 +9,12 @@ pub const CHATWORK_URL: &str = "https://www.chatwork.com";
 #[allow(dead_code)]
 pub const KDDI_URL: &str = "https://kcw.kddi.ne.jp";
 
+/// Attendance / Quick Leave mini app host
+pub const ATTENDANCE_MINI_APP_HOST: &str = "attendance.thk-hd-hn.vn";
+
+/// Attendance / Quick Leave mini app default title
+pub const ATTENDANCE_MINI_APP_TITLE: &str = "THK Quick Leave";
+
 /// App name displayed in title bar / tray
 pub const APP_NAME: &str = "THK-Chat";
 
@@ -69,4 +75,10 @@ pub enum IpcMessage {
     Logout,
     WriteLogError(String),
     SetAppIcon(String),
+    OpenMiniApp {
+        #[serde(default)]
+        url: String,
+        #[serde(default)]
+        title: Option<String>,
+    },
 }

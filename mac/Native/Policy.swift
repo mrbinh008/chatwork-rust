@@ -1,6 +1,9 @@
 import Foundation
 
 enum WebPolicy {
+    static let attendanceMiniAppURL = URL(string: "https://attendance.thk-hd-hn.vn/")!
+    static let attendanceMiniAppTitle = "THK Quick Leave"
+
     static func matches(_ host: String, _ domain: String) -> Bool {
         host == domain || host.hasSuffix("." + domain)
     }
@@ -15,6 +18,19 @@ enum WebPolicy {
         guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
         return ["auth0.com", "accounts.google.com", "appleid.apple.com",
                 "login.microsoftonline.com", "login.live.com"].contains { matches(host, $0) }
+    }
+
+    static func isMiniApp(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return host == "attendance.thk-hd-hn.vn"
+    }
+
+    static func isMiniAppNavigation(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        if matches(host, "thk-hd-hn.vn") { return true }
+        return ["auth0.com", "google.com", "gstatic.com", "googleapis.com",
+                "accounts.youtube.com", "apple.com", "appleid.apple.com",
+                "microsoft.com", "microsoftonline.com", "live.com"].contains { matches(host, $0) }
     }
 
     static func isNewer(_ candidate: String, than current: String) -> Bool {

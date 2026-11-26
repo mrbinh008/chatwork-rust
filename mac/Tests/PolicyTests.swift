@@ -12,6 +12,14 @@ struct PolicyTests {
         }
         precondition(WebPolicy.isInternal(URL(string: "https://accounts.google.com/o/oauth2/auth")!))
         precondition(!WebPolicy.isChat(URL(string: "https://accounts.google.com/")!))
+        precondition(WebPolicy.isMiniApp(URL(string: "https://attendance.thk-hd-hn.vn/")!))
+        precondition(WebPolicy.isMiniApp(URL(string: "https://attendance.thk-hd-hn.vn/requests")!))
+        for address in ["http://attendance.thk-hd-hn.vn/", "https://attendance.thk-hd-hn.vn.evil.test/", "https://evil.test/?attendance.thk-hd-hn.vn", "https://sub.attendance.thk-hd-hn.vn/", "javascript:alert(1)"] {
+            precondition(!WebPolicy.isMiniApp(URL(string: address)!))
+        }
+        precondition(WebPolicy.isMiniAppNavigation(URL(string: "https://attendance.thk-hd-hn.vn/auth/google/callback")!))
+        precondition(WebPolicy.isMiniAppNavigation(URL(string: "https://accounts.google.com/o/oauth2/auth")!))
+        precondition(!WebPolicy.isMiniAppNavigation(URL(string: "https://evil.test/")!))
         precondition(WebPolicy.isNewer("2.27.0", than: "2.26.2"))
         precondition(WebPolicy.isNewer("2.26.10", than: "2.26.2"))
         precondition(!WebPolicy.isNewer("2.26.2", than: "2.26.2"))

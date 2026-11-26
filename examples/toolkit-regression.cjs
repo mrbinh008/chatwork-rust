@@ -214,6 +214,14 @@ assert.equal(uiWindow.__thk_matchCustomShortkey(composingKey), false);
 assert.equal(codeShortcutCalls, 1, 'IME composition does not trigger formatting');
 codeShortcutButton.remove();
 
+let miniAppOpens = 0;
+uiWindow.__thk_openLeaveMiniApp = () => { miniAppOpens++; };
+leave.remove();
+const leaveKeyEvent = new UIEvent('keydown', {key:'l',ctrlKey:true,metaKey:false,shiftKey:true,altKey:false});
+assert.equal(uiWindow.__thk_matchCustomShortkey(leaveKeyEvent), true);
+assert.equal(miniAppOpens, 1, 'Leave shortcut opens attendance mini app even without toolbar button');
+toolbar.prepend(leave);
+
 assert.ok(uiWindow.__thkToolkit.getAllRooms().length > 0);
 assert.equal(uiWindow.__thkToolkit.getRoomTree().length, 0, 'No standalone room tree is fabricated without native categories');
 (async()=>{

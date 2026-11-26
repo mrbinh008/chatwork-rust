@@ -50,6 +50,12 @@
         setAppIcon: function(variant) {
             window.__chatwork_ipc.send('SetAppIcon', String(variant || 'original'));
         },
+        openMiniApp: function(url, title) {
+            window.__chatwork_ipc.send('OpenMiniApp', {
+                url: String(url || ''),
+                title: typeof title === 'string' && title.trim() ? title.trim() : null
+            });
+        },
         getVersion: function() {
             return APP_VERSION;
         },
@@ -2445,399 +2451,24 @@
     }
     setupChatKeyBindings();
 
-    // ── 14. Redesigned Modern Leave Request Modal ─────────────────────────────
-    function formatLeaveDate(date) {
-        return date.split('-').reverse().join('/');
-    }
-    function getLeaveDateRange(start, end) {
-        const parse = value => {
-            const date = new Date(value + 'T00:00:00Z');
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime())
-                || date.toISOString().slice(0, 10) !== value) throw new Error('Vui lòng chọn ngày hợp lệ.');
-            return date;
-        };
-        const first = parse(start), last = parse(end);
-        if (last < first) throw new Error('Ngày kết thúc phải từ ngày bắt đầu trở đi.');
-        if ((last-first)/86400000 >= 366) throw new Error('Chỉ chọn tối đa 366 ngày trong một lần.');
-        const dates = [];
-        for (const date = new Date(first); date <= last; date.setUTCDate(date.getUTCDate() + 1)) dates.push(date.toISOString().slice(0, 10));
-        return dates;
-    }
-    function getLeaveSlots(dates, start, end) {
-        return dates.map(value => typeof value === 'string' ? { date:value,start,end } : value);
-    }
-    function validateLeaveRequest(dates, start, end, reason) {
-        if (!dates.length) return 'Vui lòng chọn ít nhất một ngày nghỉ.';
-        const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
-        const seen=new Set();
-        for(const slot of getLeaveSlots(dates,start,end)) {
-            try { getLeaveDateRange(slot.date,slot.date); } catch { return 'Vui lòng chọn ngày hợp lệ cho từng dòng.'; }
-            if(seen.has(slot.date)) return 'Mỗi ngày chỉ chọn một khoảng giờ nghỉ.';
-            seen.add(slot.date);
-            if (!timePattern.test(slot.start) || !timePattern.test(slot.end)) return 'Vui lòng nhập đủ giờ bắt đầu và kết thúc.';
-            if (slot.start >= slot.end) return 'Giờ kết thúc phải sau giờ bắt đầu.';
-        }
-        if (!reason.trim()) return 'Vui lòng chọn hoặc nhập lý do nghỉ.';
-        return '';
-    }
-    function formatLeaveRequest(type, dates, start, end, reason, leaders = []) {
-        const times = [...new Set(getLeaveSlots(dates,start,end).sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start))
-            .map(slot => '- Time: ' + slot.start + ' - ' + slot.end + '  ' + formatLeaveDate(slot.date)))];
-        const seen = new Set();
-        const tags = leaders.filter(leader => leader && /^\d+$/.test(String(leader.id)) && !seen.has(String(leader.id)) && seen.add(String(leader.id)))
-            .map(leader => '[To:' + leader.id + '] ' + String(leader.name || '').replace(/[\r\n]+/g, ' ').replace(/\[/g, '［').replace(/\]/g, '］').trim());
-        return (tags.length ? tags.join('\n') + '\n' : '') + '[info]\n' + ['- Request: ' + type, ...times, '- Reason: ' + reason].join('\n') + '\n[/info]\n';
-    }
-
-    function getLeaveLeaderStorageKey() {
-        const uid = window.CW?.application?.myId?.userId?.value || window.AC?.myid;
-        const rid = window.location.hash.match(/rid(\d+)/)?.[1] || window.RM?.id || window.CW?.roomId;
-        return uid && rid ? 'thk-leave-leaders.' + uid + '.' + rid : null;
-    }
-    function readLeaveLeaders(key) {
-        if (!key) return [];
-        try {
-            const saved = JSON.parse(localStorage.getItem(key) || '[]');
-            return Array.isArray(saved) ? [...new Set(saved.map(String).filter(id => /^\d+$/.test(id)))] : [];
-        } catch(error) { return []; }
-    }
-    function rememberLeaveLeaders(key, ids) {
-        if (!key) return;
-        try { localStorage.setItem(key, JSON.stringify([...new Set(ids.map(String).filter(id => /^\d+$/.test(id)))])); } catch(error) {}
-    }
+    // ── 14. Attendance Mini App Popup (Quick Leave) ───────────────────────────
+    const ATTENDANCE_MINI_APP_URL = 'https://attendance.thk-hd-hn.vn/';
+    const ATTENDANCE_MINI_APP_TITLE = 'THK Quick Leave';
 
     function openLeaveRequestModal() {
         window.__thkToolkit?.close();
         closeMarkdownPreviewModal();
-        if (document.getElementById('thk-modal-backdrop')) return;
-
-        const types = [
-            { key: 'PAID_LEAVE', name: 'Nghỉ phép năm', desc: 'Có hưởng lương' },
-            { key: 'HALF-DAY_PAID_LEAVE', name: 'Nghỉ nửa ngày', desc: 'Có hưởng lương (Sáng/Chiều)' },
-            { key: 'LATE', name: 'Đi muộn', desc: 'Báo đến muộn' },
-            { key: 'LEAVE_EARLY', name: 'Về sớm', desc: 'Báo về sớm hơn giờ tan' },
-            { key: 'ABSENT_DURING_WORK', name: 'Nghỉ giữa giờ', desc: 'Ra ngoài có việc riêng' },
-            { key: 'UNPAID_LEAVE', name: 'Nghỉ không lương', desc: 'Cả ngày' },
-            { key: 'HALF-DAY_UNPAID_LEAVE', name: 'Nghỉ nửa ngày KL', desc: 'Không hưởng lương' },
-            { key: 'CHANGE_SCHEDULE', name: 'Đổi ca / Lịch', desc: 'Thay đổi giờ làm' },
-            { key: 'CANCEL', name: 'Hủy đơn đã gửi', desc: 'Hủy request trước' }
-        ];
-
-        const times = [
-            ['08:00', '17:00'], ['08:00', '12:00'],
-            ['13:00', '17:00'], ['15:00', '17:00']
-        ];
-        const reasons = [
-            { en: 'Personal matter', ja: '私用のため' },
-            { en: 'Medical appointment / Illness', ja: '通院・体調不良のため' },
-            { en: 'Administrative procedures', ja: '行政手続きのため' },
-            { en: 'Family matter', ja: '家庭の事情のため' },
-            { en: 'Caring for a sick family member', ja: '家族の看病のため' },
-            { en: 'Traffic congestion / Severe weather', ja: '交通渋滞・悪天候のため' }
-        ];
-        let selectedType = 'PAID_LEAVE';
-        let selectedReason = null;
-        const now = new Date();
-        const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'),
-            String(now.getDate()).padStart(2, '0')].join('-');
-        const selectedSlots = [{date:today,start:'08:00',end:'17:00'}];
-        const requestRoom = window.location.hash.match(/rid(\d+)/)?.[1] || '';
-        const leaderStorageKey = getLeaveLeaderStorageKey();
-        const selectedLeaderIds = new Set(readLeaveLeaders(leaderStorageKey));
-        let leaderMembers = [];
-
-        const modalEl = document.createElement('div');
-        modalEl.id = 'thk-modal-backdrop';
-        modalEl.className = 'thk-modal-backdrop';
-
-        modalEl.innerHTML = `
-            <div class="thk-modal-box">
-                <div class="thk-modal-header">
-                    <div class="thk-modal-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M9 16l2 2 4-4"></path></svg>
-                        <span>Tạo Đơn Nghỉ / Báo Bận Nhanh</span>
-                    </div>
-                    <button type="button" class="thk-modal-close" id="thkModalClose" title="Đóng (Esc)">✕</button>
-                </div>
-                <div class="thk-modal-body">
-                    <div class="thk-sec-title">1. Chọn loại yêu cầu (Request)</div>
-                    <div class="thk-type-grid" id="thkTypeGrid">
-                        ${types.map((t, idx) => `
-                            <div class="thk-type-card ${idx === 0 ? 'active' : ''}" data-type="${t.key}">
-                                <span class="thk-type-name">${t.name}</span>
-                                <span class="thk-type-desc">${t.key}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    <div class="thk-sec-title">2. Ngày và thời gian nghỉ</div>
-                    <p class="thk-leave-hint">Mỗi dòng là một ngày kèm khoảng giờ nghỉ riêng.</p>
-                    <div id="thkSelectedDates" class="thk-leave-slots"></div>
-                    <div class="thk-chips-row"><button type="button" class="thk-chip-btn" id="thkAddSingleDate">Thêm ngày</button><button type="button" class="thk-chip-btn" id="thkClearDates">Bỏ chọn tất cả</button></div>
-                    <details class="thk-leave-range"><summary>Thêm nhiều ngày cùng khoảng giờ</summary>
-                      <div class="thk-leave-fields">
-                        <label>Từ ngày<input type="date" id="thkDateStart" class="thk-input-field" value="${today}" /></label>
-                        <label>Đến ngày<input type="date" id="thkDateEnd" class="thk-input-field" value="${today}" /></label>
-                        <label>Từ giờ<input type="time" id="thkTimeStart" class="thk-input-field" value="08:00" /></label>
-                        <label>Đến giờ<input type="time" id="thkTimeEnd" class="thk-input-field" value="17:00" /></label>
-                      </div>
-                      <button type="button" class="thk-chip-btn" id="thkAddDates">Thêm khoảng ngày</button>
-                    </details>
-                    <div class="thk-sec-title">3. Tag leader (có thể chọn nhiều người)</div>
-                    <div class="thk-leader-search-row">
-                        <input type="search" id="thkLeaderSearch" class="thk-input-field" placeholder="Tìm tên hoặc ID leader..." aria-label="Tìm leader" />
-                        <button type="button" id="thkReloadLeaders" class="thk-chip-btn">Tải lại</button>
-                    </div>
-                    <div id="thkSelectedLeaders" class="thk-chips-row" aria-label="Leader đã chọn"></div>
-                    <div id="thkLeaderResults" class="thk-leader-results" role="group" aria-label="Danh sách leader"></div>
-                    <p class="thk-leave-hint">Mỗi leader được tag trên một dòng. Danh sách được nhớ sau khi sao chép, chèn hoặc gửi request.</p>
-                    <div class="thk-sec-title">4. Lý do (Reason / 理由)</div>
-                    <label for="thkReasonLanguage">Ngôn ngữ lý do gợi ý</label>
-                    <select id="thkReasonLanguage" class="thk-input-field"><option value="en">English</option><option value="ja">日本語</option><option value="both">English / 日本語</option></select>
-                    <div class="thk-chips-row" id="thkReasonChips">
-                        ${reasons.map((r, idx) => `<button type="button" class="thk-chip-btn" data-reason-index="${idx}">${r.en} / ${r.ja}</button>`).join("")}
-                    </div>
-                    <input type="text" id="thkReasonInput" class="thk-input-field" placeholder="Personal matter / 私用のため" required />
-                    <p id="thkLeaveError" class="thk-leave-error" role="alert"></p>
-                    <div class="thk-sec-title">Xem trước tin nhắn</div>
-                    <div class="thk-preview-card thk-chat-preview" id="thkLeaveRendered" aria-live="polite"></div>
-                    <details class="thk-source-details"><summary>Mã tin nhắn</summary><pre class="thk-preview-raw" id="thkPrevRaw"></pre></details>
-                </div>
-                <div class="thk-modal-footer">
-                    <button type="button" class="thk-btn-secondary" id="thkBtnModalCopy" title="Sao chép nội dung">Sao chép</button>
-                    <div style="flex: 1;"></div>
-                    <button type="button" class="thk-btn-secondary" id="thkBtnModalCancel">Hủy (Esc)</button>
-                    <button type="button" class="thk-btn-primary" id="thkBtnModalInsert">Chèn vào chat <span class="thk-kbd">↵</span></button>
-                    <button type="button" class="thk-btn-success" id="thkBtnModalSend">Gửi ngay <span class="thk-kbd">Ctrl+↵</span></button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modalEl);
-
-        const startTimeEl = document.getElementById('thkTimeStart');
-        const endTimeEl = document.getElementById('thkTimeEnd');
-        const startDateEl = document.getElementById('thkDateStart');
-        const endDateEl = document.getElementById('thkDateEnd');
-        const reasonEl = document.getElementById('thkReasonInput');
-        const languageEl = document.getElementById('thkReasonLanguage');
-        const prevRaw = document.getElementById('thkPrevRaw');
-        const errorEl = document.getElementById('thkLeaveError');
-        const leaderSearch = document.getElementById('thkLeaderSearch');
-        const leaderResults = document.getElementById('thkLeaderResults');
-        const selectedLeadersEl = document.getElementById('thkSelectedLeaders');
-
-        // Type selection
-        document.querySelectorAll('#thkTypeGrid .thk-type-card').forEach(function(card) {
-            card.addEventListener('click', function() {
-                document.querySelectorAll('#thkTypeGrid .thk-type-card').forEach(c => c.classList.remove('active'));
-                card.classList.add('active');
-                selectedType = card.getAttribute('data-type');
-                updatePreview();
-            });
-        });
-
-        function getFormattedOutput() {
-            return formatLeaveRequest(selectedType, selectedSlots, '', '', reasonEl.value.trim(), selectedLeaders());
+        if (window.ipc && typeof window.ipc.postMessage === 'function') {
+            window.__chatwork_ipc.openMiniApp(ATTENDANCE_MINI_APP_URL, ATTENDANCE_MINI_APP_TITLE);
+            return true;
         }
-        function selectedLeaders() {
-            const byId = new Map(leaderMembers.map(member => [String(member.id), member]));
-            return [...selectedLeaderIds].map(id => byId.get(id)).filter(Boolean);
+        if (typeof window.open === 'function') {
+            window.open(ATTENDANCE_MINI_APP_URL, 'thk_quick_leave', 'popup=yes,width=540,height=780,resizable=yes,scrollbars=yes');
+            return true;
         }
-        function rememberLeaderSelection() {
-            rememberLeaveLeaders(leaderStorageKey, selectedLeaders().map(member => member.id));
-        }
-        function renderSelectedLeaders() {
-            selectedLeadersEl.replaceChildren();
-            const known = new Map(leaderMembers.map(member => [String(member.id), member]));
-            [...selectedLeaderIds].map(id => known.get(id) || { id, name: 'ID: ' + id }).forEach(member => {
-                const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'thk-chip-btn active';
-                chip.textContent = member.name + ' ×'; chip.setAttribute('aria-label', 'Bỏ leader ' + member.name);
-                chip.addEventListener('click', () => { selectedLeaderIds.delete(String(member.id)); renderSelectedLeaders(); updatePreview(); });
-                selectedLeadersEl.appendChild(chip);
-            });
-            leaderResults.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = selectedLeaderIds.has(input.value); });
-        }
-        function renderLeaderResults() {
-            leaderResults.replaceChildren();
-            const query = normalizeSearch(leaderSearch.value.replace(/^@/, ''));
-            const matches = leaderMembers.filter(member => !query || normalizeSearch(member.name).includes(query) || String(member.id).includes(query));
-            matches.slice(0, 60).forEach(member => {
-                const label = document.createElement('label'); label.className = 'thk-leader-option';
-                const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(member.id); checkbox.checked = selectedLeaderIds.has(checkbox.value);
-                checkbox.addEventListener('change', () => { if (checkbox.checked) selectedLeaderIds.add(checkbox.value); else selectedLeaderIds.delete(checkbox.value); renderSelectedLeaders(); updatePreview(); });
-                const name = document.createElement('span'); name.textContent = member.name;
-                label.append(checkbox, name); leaderResults.appendChild(label);
-            });
-            if (!matches.length) {
-                const empty = document.createElement('p'); empty.className = 'thk-leave-hint';
-                empty.textContent = leaderMembers.length ? 'Không tìm thấy leader phù hợp.' : 'Chưa tải được danh sách thành viên. Bấm Tải lại để thử lại.';
-                leaderResults.appendChild(empty);
-            } else if (matches.length > 60) {
-                const more = document.createElement('p'); more.className = 'thk-leave-hint'; more.textContent = 'Nhập tên để tìm trong ' + matches.length + ' thành viên.'; leaderResults.appendChild(more);
-            }
-        }
-        function refreshLeaders() {
-            if (!modalEl.isConnected) return;
-            leaderMembers = getRoomMembers().filter(member => /^\d+$/.test(String(member.id)));
-            renderLeaderResults(); renderSelectedLeaders(); updatePreview();
-        }
-        leaderSearch.addEventListener('input', renderLeaderResults);
-        document.getElementById('thkReloadLeaders').addEventListener('click', refreshLeaders);
-        document.addEventListener('thk-members-ready', refreshLeaders);
-        function updatePreview() {
-            prevRaw.textContent = getFormattedOutput();
-            document.getElementById('thkLeaveRendered').innerHTML = parseMarkdownAndBBCode(getFormattedOutput());
-            errorEl.textContent = '';
-            modalEl.querySelectorAll('.thk-leave-slot').forEach((row,index)=>{
-                row.querySelectorAll('.thk-slot-presets button').forEach(chip=>chip.classList.toggle('active',chip.dataset.start===selectedSlots[index].start&&chip.dataset.end===selectedSlots[index].end));
-            });
-        }
-        function renderDates() {
-            const container = document.getElementById('thkSelectedDates'); container.replaceChildren();
-            selectedSlots.forEach((slot,index)=>{
-                const row=document.createElement('div');row.className='thk-leave-slot';
-                const fields=document.createElement('div');fields.className='thk-slot-fields';
-                function input(labelText,type,key){
-                    const label=document.createElement('label');label.textContent=labelText;
-                    const input=document.createElement('input');input.type=type;input.className='thk-input-field thk-slot-'+key;input.value=slot[key];input.required=true;
-                    input.addEventListener('input',()=>{slot[key]=input.value;updatePreview();});label.appendChild(input);fields.appendChild(label);return input;
-                }
-                input('Ngày nghỉ','date','date');const from=input('Từ giờ','time','start'),to=input('Đến giờ','time','end');
-                const remove=document.createElement('button');remove.type='button';remove.className='thk-btn-secondary thk-slot-remove';remove.textContent='×';remove.setAttribute('aria-label','Xóa dòng ngày nghỉ');
-                remove.addEventListener('click',()=>{selectedSlots.splice(index,1);renderDates();});fields.appendChild(remove);row.appendChild(fields);
-                const presets=document.createElement('div');presets.className='thk-slot-presets thk-chips-row';
-                times.forEach(([start,end])=>{
-                    const chip=document.createElement('button');chip.type='button';chip.className='thk-chip-btn';chip.textContent=start+' - '+end;chip.dataset.start=start;chip.dataset.end=end;
-                    chip.addEventListener('click',()=>{slot.start=start;slot.end=end;from.value=start;to.value=end;updatePreview();});presets.appendChild(chip);
-                });row.appendChild(presets);container.appendChild(row);
-            });updatePreview();
-        }
-        document.getElementById('thkAddSingleDate').addEventListener('click',()=>{
-            const previous=selectedSlots[selectedSlots.length-1];let date=today;
-            if(previous?.date){const next=new Date(previous.date+'T00:00:00Z');if(Number.isFinite(next.getTime())){next.setUTCDate(next.getUTCDate()+1);date=next.toISOString().slice(0,10);}}
-            selectedSlots.push({date,start:previous?.start||'08:00',end:previous?.end||'17:00'});renderDates();
-            modalEl.querySelector('.thk-leave-slot:last-child input')?.focus({preventScroll:true});
-        });
-        document.getElementById('thkAddDates').addEventListener('click',()=>{
-            try{
-                const dates=getLeaveDateRange(startDateEl.value,endDateEl.value||startDateEl.value);
-                const error=validateLeaveRequest(dates,startTimeEl.value,endTimeEl.value,'range');if(error)throw new Error(error);
-                dates.forEach(date=>{const existing=selectedSlots.find(slot=>slot.date===date);if(existing){existing.start=startTimeEl.value;existing.end=endTimeEl.value;}else selectedSlots.push({date,start:startTimeEl.value,end:endTimeEl.value});});renderDates();
-            }catch(error){errorEl.textContent=error.message;}
-        });
-        document.getElementById('thkClearDates').addEventListener('click',()=>{selectedSlots.length=0;renderDates();});
-        renderDates();refreshLeaders();
-        reasonEl.addEventListener('input', () => {
-            selectedReason = null;
-            document.querySelectorAll('#thkReasonChips .thk-chip-btn').forEach(chip => chip.classList.remove('active'));
-            updatePreview();
-        });
-        function applyReason() {
-            if (selectedReason === null) return;
-            const reason = reasons[selectedReason];
-            reasonEl.value = languageEl.value === 'both' ? reason.en + ' / ' + reason.ja : reason[languageEl.value];
-            updatePreview();
-        }
-        languageEl.addEventListener('change', applyReason);
-        document.querySelectorAll('#thkReasonChips .thk-chip-btn').forEach(chip => {
-            chip.addEventListener('click', () => {
-                selectedReason = Number(chip.dataset.reasonIndex);
-                document.querySelectorAll('#thkReasonChips .thk-chip-btn').forEach(c => c.classList.toggle('active', c === chip));
-                applyReason();
-            });
-        });
-        function validateRequest() {
-            if ((window.location.hash.match(/rid(\d+)/)?.[1] || '') !== requestRoom) { errorEl.textContent = 'Phòng chat đã thay đổi. Vui lòng mở lại form request.'; return false; }
-            if (selectedLeaders().length !== selectedLeaderIds.size) { errorEl.textContent = 'Chưa tải được thông tin một số leader đã lưu. Bấm Tải lại hoặc bỏ chọn leader đó.'; return false; }
-            const error = validateLeaveRequest(selectedSlots, '', '', reasonEl.value);
-            errorEl.textContent = error;
-            return !error;
-        }
-
-        function closeModal() {
-            window.removeEventListener('keydown', onModalKeyDown);
-            document.removeEventListener('thk-members-ready', refreshLeaders);
-            modalEl.remove();
-            const chat = getChatText();
-            if (chat) chat.focus();
-        }
-
-        document.getElementById('thkModalClose').addEventListener('click', closeModal);
-        document.getElementById('thkBtnModalCancel').addEventListener('click', closeModal);
-        modalEl.addEventListener('click', function(e) {
-            if (e.target === modalEl) closeModal();
-        });
-
-        document.getElementById('thkBtnModalCopy').addEventListener('click', function() {
-            if (!validateRequest()) return;
-            const text = getFormattedOutput();
-            copyTextToClipboard(text).then(function() {
-                rememberLeaderSelection();
-                const btn = document.getElementById('thkBtnModalCopy');
-                btn.textContent = '✓ Đã chép!';
-                setTimeout(function() { btn.textContent = 'Sao chép'; }, 1500);
-            });
-        });
-
-        function doInsert() {
-            if (!validateRequest()) return;
-            const text = getFormattedOutput();
-            closeModal();
-            const chat = getChatText();
-            if (chat) {
-                const start = chat.selectionStart;
-                const end = chat.selectionEnd;
-                insertTextAtRange(start, end, text, text.length);
-                rememberLeaderSelection();
-            }
-        }
-
-        function doSend() {
-            if (!validateRequest()) return;
-            const text = getFormattedOutput();
-            closeModal();
-            const chat = getChatText();
-            if (chat) {
-                const start = chat.selectionStart;
-                const end = chat.selectionEnd;
-                insertTextAtRange(start, end, text, text.length);
-                rememberLeaderSelection();
-                setTimeout(function() {
-                    const sendBtn = document.querySelector('#_sendButton') || [...document.querySelectorAll('#CurrentSelectedRoom button')].find(button => /^(Gửi|Send|送信)$/.test((button.getAttribute('aria-label') || button.textContent).trim()));
-                    if (sendBtn) sendBtn.click();
-                }, 60);
-            }
-        }
-
-        document.getElementById('thkBtnModalInsert').addEventListener('click', doInsert);
-        document.getElementById('thkBtnModalSend').addEventListener('click', doSend);
-
-        function onModalKeyDown(e) {
-            if (e.key === 'Escape') {
-                closeModal();
-                return;
-            }
-            if (e.isComposing) return;
-            if (e.key === 'Enter') {
-                if (!e.ctrlKey && !e.metaKey && e.target !== reasonEl) return;
-                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-                const mod = isMac ? e.metaKey : e.ctrlKey;
-                e.preventDefault();
-                if (mod) {
-                    doSend();
-                } else {
-                    doInsert();
-                }
-            }
-        }
-        window.addEventListener('keydown', onModalKeyDown);
-        modalEl.querySelector('.thk-modal-box').setAttribute('role', 'dialog');
-        modalEl.querySelector('.thk-modal-box').setAttribute('aria-modal', 'true');
-        modalEl.querySelector('.thk-modal-box').setAttribute('aria-label', 'Tạo đơn nghỉ');
-
-        setTimeout(() => reasonEl.focus({ preventScroll: true }), 120);
+        return false;
     }
+    window.__thk_openLeaveMiniApp = openLeaveRequestModal;
 
     // ── 15. Markdown & Chatwork BBCode Parser and Preview Modal ───────────────
     // Render Chatwork tags only: Markdown markers remain literal, as in sent messages.
@@ -3809,5 +3440,5 @@
         initFullPageTranslator();
     }
 
-    console.log('[THK Native Client] Fully initialized with Same-row Toolbar, Mention Dropdown, Markdown Preview & Leave Request Modal!');
+    console.log('[THK Native Client] Fully initialized with Same-row Toolbar, Mention Dropdown, Markdown Preview & Attendance Mini App!');
 })();

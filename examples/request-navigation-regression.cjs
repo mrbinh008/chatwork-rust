@@ -15,50 +15,48 @@ class TestEventTarget {
 }
 const source = fs.readFileSync(path.join(__dirname, '../src/injected.js'), 'utf8');
 new vm.Script(source);
-const context = vm.createContext({ Date, Set });
-vm.runInContext(source.slice(source.indexOf('    function formatLeaveDate'), source.indexOf('    function openLeaveRequestModal')), context);
-assert.equal(context.formatLeaveRequest('HALF-DAY_PAID_LEAVE', ['2026-11-12'], '13:00', '17:00', 'Personal matter'),
-    '[info]\n- Request: HALF-DAY_PAID_LEAVE\n- Time: 13:00 - 17:00  12/11/2026\n- Reason: Personal matter\n[/info]\n');
-assert.equal(context.formatLeaveRequest('PAID_LEAVE', ['2026-11-14', '2026-11-12', '2026-11-12'], '08:30', '16:45', '私用のため'),
-    '[info]\n- Request: PAID_LEAVE\n- Time: 08:30 - 16:45  12/11/2026\n- Time: 08:30 - 16:45  14/11/2026\n- Reason: 私用のため\n[/info]\n');
-assert.equal(context.getLeaveDateRange('2026-11-12', '2026-11-14').join(','), '2026-11-12,2026-11-13,2026-11-14');
-assert.equal(context.getLeaveDateRange('2028-02-28', '2028-03-01').join(','), '2028-02-28,2028-02-29,2028-03-01');
-assert.equal(context.getLeaveDateRange('2026-12-31', '2027-01-01').join(','), '2026-12-31,2027-01-01');
-assert.throws(() => context.getLeaveDateRange('2026-02-30', '2026-03-01'));
-assert.throws(() => context.getLeaveDateRange('2026-11-14', '2026-11-12'));
-assert.throws(() => context.getLeaveDateRange('', ''));
-assert.equal(context.validateLeaveRequest(['2026-11-12'], '13:00', '17:00', 'Personal matter'), '');
-for (const values of [[[], '13:00', '17:00', 'Reason'], [['2026-11-12'], '', '17:00', 'Reason'],
-    [['2026-11-12'], '17:00', '13:00', 'Reason'], [['2026-11-12'], '13:00', '13:00', 'Reason'],
-    [['2026-11-12'], '13:00', '17:00', ' ']]) assert.ok(context.validateLeaveRequest(...values));
+const miniAppIpcMessages = [];
+const openedPopups = [];
+let toolkitClosed = 0;
+let previewClosed = 0;
+const miniAppWindow = {
+    ipc: { postMessage: msg => miniAppIpcMessages.push(JSON.parse(msg)) },
+    __thkToolkit: { close() { toolkitClosed++; } },
+    open: (...args) => { openedPopups.push(args); return {}; }
+};
+const miniAppContext = vm.createContext({
+    window: miniAppWindow,
+    console,
+    navigator: { platform: 'Win32', userAgent: 'Test' },
+    closeMarkdownPreviewModal() { previewClosed++; }
+});
+const ipcSlice = source.slice(source.indexOf('    window.__chatwork_ipc ='), source.indexOf('    // Keep each toast'));
+const miniAppSlice = source.slice(
+    source.indexOf('    // ── 14. Attendance Mini App Popup'),
+    source.indexOf('    // ── 15. Markdown')
+);
+vm.runInContext(ipcSlice + '\n' + miniAppSlice, miniAppContext);
+assert.equal(miniAppWindow.__thk_openLeaveMiniApp, miniAppContext.openLeaveRequestModal);
+assert.equal(miniAppContext.openLeaveRequestModal(), true);
+assert.equal(toolkitClosed, 1, 'Opening attendance mini app closes open toolkit panel');
+assert.equal(previewClosed, 1, 'Opening attendance mini app closes open preview modal');
+assert.equal(miniAppIpcMessages.length, 1, 'Native IPC OpenMiniApp message is sent');
+assert.deepEqual(miniAppIpcMessages[0], {
+    type: 'OpenMiniApp',
+    payload: {
+        url: 'https://attendance.thk-hd-hn.vn/',
+        title: 'THK Quick Leave'
+    }
+});
+assert.equal(openedPopups.length, 0, 'Native IPC path does not invoke browser window.open');
 
-
-const pairs=[{date:'2026-11-12',start:'08:00',end:'12:00'},{date:'2026-11-13',start:'13:00',end:'17:00'}];
-assert.equal(context.validateLeaveRequest(pairs,'','','Personal matter'),'');
-assert.ok(context.formatLeaveRequest('PAID_LEAVE',pairs,'','','Personal matter').includes('- Time: 08:00 - 12:00  12/11/2026\n- Time: 13:00 - 17:00  13/11/2026'));
-assert.ok(context.validateLeaveRequest([...pairs,{date:'2026-11-12',start:'09:00',end:'10:00'}],'','','Reason'));
-assert.ok(context.validateLeaveRequest([{date:'2026-02-30',start:'08:00',end:'12:00'}],'','','Reason'));
-assert.ok(context.validateLeaveRequest([{date:'2026-11-12',start:'17:00',end:'13:00'}],'','','Reason'));
-assert.throws(()=>context.getLeaveDateRange('2026-01-01','2028-01-01'));
-
-const leaderMessage = context.formatLeaveRequest('PAID_LEAVE', ['2026-11-12'], '08:00', '17:00', 'Personal matter', [
-    {id:'101',name:'Leader A'}, {id:'102',name:'Leader B'}, {id:'101',name:'Duplicate'}, {id:'bad',name:'Invalid'}
-]);
-assert.equal(leaderMessage, '[To:101] Leader A\n[To:102] Leader B\n[info]\n- Request: PAID_LEAVE\n- Time: 08:00 - 17:00  12/11/2026\n- Reason: Personal matter\n[/info]\n');
-assert.ok(context.formatLeaveRequest('PAID_LEAVE', ['2026-11-12'], '08:00', '17:00', 'Reason', [{id:'101',name:'Name\n[To:all]'}]).startsWith('[To:101] Name ［To:all］\n'));
-const leaderStorage = new Map();
-context.localStorage = { getItem:key=>leaderStorage.get(key)??null, setItem:(key,value)=>leaderStorage.set(key,value) };
-context.window = {CW:{application:{myId:{userId:{value:'999'}}}},location:{hash:'#!rid1'}};
-const leaderKey = context.getLeaveLeaderStorageKey();
-context.rememberLeaveLeaders(leaderKey, ['101','102','101','bad']);
-assert.equal(context.readLeaveLeaders(leaderKey).join(','),'101,102');
-context.rememberLeaveLeaders(leaderKey, ['102']);
-assert.equal(context.readLeaveLeaders(leaderKey).join(','),'102','Removed leaders are not restored');
-context.window.location.hash='#!rid2';
-assert.equal(context.readLeaveLeaders(context.getLeaveLeaderStorageKey()).length,0,'Remember leaders per room');
-context.window.location.hash='#!rid1'; context.window.CW.application.myId.userId.value='1000';
-assert.equal(context.readLeaveLeaders(context.getLeaveLeaderStorageKey()).length,0,'Do not mix accounts');
-leaderStorage.set(leaderKey,'invalid JSON');assert.equal(context.readLeaveLeaders(leaderKey).length,0);
+// Fallback when native IPC is unavailable uses window.open popup.
+delete miniAppWindow.ipc;
+assert.equal(miniAppContext.openLeaveRequestModal(), true);
+assert.equal(openedPopups.length, 1);
+assert.equal(openedPopups[0][0], 'https://attendance.thk-hd-hn.vn/');
+assert.equal(openedPopups[0][1], 'thk_quick_leave');
+assert.ok(String(openedPopups[0][2]).includes('popup=yes'));
 
 const messages = [];
 const timers = [];

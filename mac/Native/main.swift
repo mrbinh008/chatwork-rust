@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
     private var popups: [NSWindow] = []
+    private var miniAppWindow: NSWindow?
+    private var miniAppWebView: WKWebView?
+    private var miniAppPopups: [NSWindow] = []
     private var downloads: [ObjectIdentifier: WKDownload] = [:]
     private var downloadDestinations: [ObjectIdentifier: DownloadDestination] = [:]
     private var updater: NativeUpdater!
@@ -188,9 +191,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc private func about() { NSApp.orderFrontStandardAboutPanel(nil) }
     @objc private func settings() { evaluate("window.__thkToolkit?.openSettings();") }
     @objc private func checkUpdates() { updater.check(open: true) }
-    @objc private func reload() { webView.reload() }
-    @objc private func back() { webView.goBack() }
-    @objc private func forward() { webView.goForward() }
+    private var activeWebView: WKWebView {
+        if let keyView = NSApp.keyWindow?.contentView as? WKWebView {
+            return keyView
+        }
+        return webView
+    }
+    @objc private func reload() { activeWebView.reload() }
+    @objc private func back() { activeWebView.goBack() }
+    @objc private func forward() { activeWebView.goForward() }
     @objc private func zoomIn() { setZoom(zoom + 0.1) }
     @objc private func zoomOut() { setZoom(zoom - 0.1) }
     @objc private func resetZoom() { setZoom(1) }
@@ -236,8 +245,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if sender === window { sender.orderOut(nil); return false }
         return true
     }
+    private func isMiniAppWebView(_ candidate: WKWebView) -> Bool {
+        if candidate === miniAppWebView { return true }
+        return miniAppPopups.contains { $0.contentView === candidate }
+    }
+
+    private func openMiniApp(url: URL, title: String) {
+        if let existingWindow = miniAppWindow {
+            existingWindow.title = title
+            if existingWindow.isMiniaturized { existingWindow.deminiaturize(nil) }
+            NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
+            existingWindow.orderFrontRegardless()
+            if let current = miniAppWebView?.url, !WebPolicy.isMiniAppNavigation(current) {
+                miniAppWebView?.load(URLRequest(url: url))
+            }
+            return
+        }
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .default()
+        configuration.applicationNameForUserAgent = "Version/17.6 Safari/605.1.15"
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+
+        let popupView = WKWebView(frame: .zero, configuration: configuration)
+        popupView.navigationDelegate = self
+        popupView.uiDelegate = self
+        popupView.allowsBackForwardNavigationGestures = true
+
+        let screenFrame = (window?.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let width = min(540.0, max(380.0, screenFrame.width - 40.0))
+        let height = min(780.0, max(540.0, screenFrame.height - 60.0))
+        let anchor = window?.frame ?? screenFrame
+        var originX = anchor.midX - width / 2.0
+        var originY = anchor.midY - height / 2.0
+        originX = min(max(originX, screenFrame.minX), screenFrame.maxX - width)
+        originY = min(max(originY, screenFrame.minY), screenFrame.maxY - height)
+
+        let host = NSWindow(
+            contentRect: NSRect(x: originX, y: originY, width: width, height: height),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        host.title = title
+        host.minSize = NSSize(width: 380, height: 540)
+        host.isReleasedWhenClosed = false
+        host.tabbingMode = .disallowed
+        host.delegate = self
+        host.contentView = popupView
+        NSApp.activate(ignoringOtherApps: true)
+        host.makeKeyAndOrderFront(nil)
+        host.orderFrontRegardless()
+
+        miniAppWebView = popupView
+        miniAppWindow = host
+        popupView.load(URLRequest(url: url))
+    }
+
     func windowWillClose(_ notification: Notification) {
-        if let closed = notification.object as? NSWindow { popups.removeAll { $0 === closed } }
+        if let closed = notification.object as? NSWindow {
+            if closed === miniAppWindow {
+                miniAppWebView?.navigationDelegate = nil
+                miniAppWebView?.uiDelegate = nil
+                miniAppWebView = nil
+                miniAppWindow = nil
+            }
+            popups.removeAll { $0 === closed }
+            miniAppPopups.removeAll { $0 === closed }
+        }
     }
     func applicationWillTerminate(_ notification: Notification) {
         if let url = webView?.url, WebPolicy.isChat(url) { defaults.set(url.absoluteString, forKey: "native.lastURL") }
@@ -256,6 +331,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             if let payload = object["payload"] as? [String: Any] { notify(payload) }
         case "SetAppIcon":
             if let variant = object["payload"] as? String { updateDockIcon(variant: variant) }
+        case "OpenMiniApp":
+            if let payload = object["payload"] as? [String: Any],
+               let rawUrl = payload["url"] as? String,
+               let targetUrl = URL(string: rawUrl),
+               WebPolicy.isMiniApp(targetUrl) {
+                let rawTitle = (payload["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = (rawTitle?.isEmpty == false) ? rawTitle! : WebPolicy.attendanceMiniAppTitle
+                openMiniApp(url: targetUrl, title: title)
+            }
         case "GoBack": webView.goBack()
         case "GoForward": webView.goForward()
         case "Reload": webView.reload()
@@ -280,7 +364,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }
         if action.shouldPerformDownload { decisionHandler(.download); return }
-        if WebPolicy.isInternal(url) || ["about", "blob", "data"].contains(url.scheme ?? "") {
+        let allowed = isMiniAppWebView(webView) ? WebPolicy.isMiniAppNavigation(url) : WebPolicy.isInternal(url)
+        if allowed || ["about", "blob", "data"].contains(url.scheme ?? "") {
             decisionHandler(.allow)
         } else {
             if action.targetFrame?.isMainFrame != false, ["http", "https", "mailto", "tel"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
@@ -336,7 +421,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url, !WebPolicy.isInternal(url), url.absoluteString != "about:blank" {
+        let fromMiniApp = isMiniAppWebView(webView)
+        if let url = action.request.url,
+           !(fromMiniApp ? WebPolicy.isMiniAppNavigation(url) : WebPolicy.isInternal(url)),
+           url.absoluteString != "about:blank" {
             if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
             return nil
         }
@@ -344,12 +432,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let popup = WKWebView(frame: .zero, configuration: configuration)
         popup.navigationDelegate = self; popup.uiDelegate = self
         let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        host.title = "THK-Chat — Sign in"; host.contentView = popup; host.delegate = self
+        host.title = fromMiniApp ? "\(WebPolicy.attendanceMiniAppTitle) — Sign in" : "THK-Chat — Sign in"
+        host.contentView = popup; host.delegate = self
         host.isReleasedWhenClosed = false; host.center(); host.makeKeyAndOrderFront(nil)
-        popups.append(host)
+        if fromMiniApp { miniAppPopups.append(host) } else { popups.append(host) }
         return popup
     }
-    func webViewDidClose(_ webView: WKWebView) { popups.first { $0.contentView === webView }?.close() }
+    func webViewDidClose(_ webView: WKWebView) {
+        if webView === miniAppWebView { miniAppWindow?.close(); return }
+        popups.first { $0.contentView === webView }?.close()
+        miniAppPopups.first { $0.contentView === webView }?.close()
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         if webView === self.webView { hasLoadedChat = false }
         webView.reload()
@@ -368,7 +461,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { showError("Cannot open Chatwork", error) }
+        if (error as NSError).code != NSURLErrorCancelled {
+            let title = isMiniAppWebView(webView) ? "Cannot open Quick Leave" : "Cannot open Chatwork"
+            let alert = NSAlert(); alert.messageText = title; alert.informativeText = error.localizedDescription
+            if let targetWindow = webView.window ?? window { alert.beginSheetModal(for: targetWindow) } else { alert.runModal() }
+        }
     }
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = parameters.allowsMultipleSelection

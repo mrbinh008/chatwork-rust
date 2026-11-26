@@ -234,7 +234,7 @@
             if (btn) btn.click(); else insert('[hr]');
         } else if (name === 'leave') {
             const btn = document.getElementById('thkBtnLeaveRequest');
-            if (btn) btn.click();
+            if (btn) btn.click(); else window.__thk_openLeaveMiniApp?.();
         } else if (name === 'preview') {
             const btn = document.getElementById('thkBtnMarkdownPreview');
             if (btn) btn.click();

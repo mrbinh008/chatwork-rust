@@ -17,7 +17,7 @@ use config::{AppConfig, WindowParams};
 use tao::{
     dpi::{LogicalPosition, LogicalSize},
     event::{Event, StartCause, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
+    event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopWindowTarget},
     window::{Icon, Window, WindowBuilder},
 };
 #[cfg(windows)]
@@ -26,6 +26,12 @@ use wry::{WebView, WebViewBuilder};
 use tracing::{info, warn, error};
 use tracing_subscriber::EnvFilter;
 use std::sync::{Arc, Mutex};
+
+struct MiniAppPopup {
+    // Drop webview before window so WebView2 detaches cleanly before HWND destruction.
+    webview: WebView,
+    window: Window,
+}
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -49,6 +55,7 @@ enum UserEvent {
     UpdateUiReady,
     Updater(updater::Event),
     SetAppIcon(String),
+    OpenMiniApp { url: String, title: Option<String> },
 }
 
 fn main() {
@@ -216,6 +223,7 @@ fn main() {
     let state_clone = state.clone();
     let proxy_clone = proxy.clone();
     let mut update_controller = updater::Controller::new();
+    let mut mini_app_popup: Option<MiniAppPopup> = None;
     {
         let update_proxy = proxy.clone();
         std::thread::spawn(move || {
@@ -227,12 +235,12 @@ fn main() {
         });
     }
 
-    event_loop.run(move |event, _, control_flow| {
+    event_loop.run(move |event, event_loop_target, control_flow| {
         let _keep_instance_lock = &instance;
         *control_flow = ControlFlow::Wait;
 
         match event {
-            // ── Window events ──────────────────────────────────────────────
+            // ── Main window events ─────────────────────────────────────────
             Event::WindowEvent { event, window_id, .. } if window_id == window.id() => {
                 match event {
                     WindowEvent::CloseRequested => {
@@ -254,11 +262,21 @@ fn main() {
                 }
             }
 
+            // ── Mini app popup window events ───────────────────────────────
+            Event::WindowEvent { event, window_id, .. }
+                if mini_app_popup.as_ref().is_some_and(|p| p.window.id() == window_id) =>
+            {
+                if let WindowEvent::CloseRequested = event {
+                    info!("Closing mini app popup window");
+                    mini_app_popup = None;
+                }
+            }
+
             // ── Menu and Tray events ───────────────────────────────────────
             Event::MainEventsCleared => {
                 // Check muda menu events
                 while let Ok(menu_event) = muda::MenuEvent::receiver().try_recv() {
-                    handle_menu_event(&menu_event.id.0, &window, &webview, &state_clone, &proxy_clone, control_flow);
+                    handle_menu_event(&menu_event.id.0, &window, &webview, &mut mini_app_popup, &state_clone, &proxy_clone, control_flow);
                 }
 
                 // Check tray icon events
@@ -268,7 +286,7 @@ fn main() {
                             button: tray_icon::MouseButton::Left,
                             ..
                         } => {
-                            present_main_window(&window);
+                            present_window(&window);
                         }
                         _ => {}
                     }
@@ -277,7 +295,7 @@ fn main() {
 
             // ── Custom user events ─────────────────────────────────────────
             Event::UserEvent(evt) => {
-                handle_user_event(evt, &window, &webview, &state_clone, &proxy_clone, &mut taskbar_mgr, tray.as_ref(), &mut update_controller, control_flow);
+                handle_user_event(evt, &window, &webview, &mut mini_app_popup, event_loop_target, &state_clone, &proxy_clone, &mut taskbar_mgr, tray.as_ref(), &mut update_controller, control_flow);
             }
 
             // ── Loop start ─────────────────────────────────────────────────
@@ -357,6 +375,9 @@ fn handle_ipc_message(msg: &str, proxy: &tao::event_loop::EventLoopProxy<UserEve
                 app::IpcMessage::InstallUpdate => { let _ = proxy.send_event(UserEvent::InstallUpdate); }
                 app::IpcMessage::UpdateUiReady => { let _ = proxy.send_event(UserEvent::UpdateUiReady); }
                 app::IpcMessage::SetAppIcon(variant) => { let _ = proxy.send_event(UserEvent::SetAppIcon(variant)); }
+                app::IpcMessage::OpenMiniApp { url, title } => {
+                    let _ = proxy.send_event(UserEvent::OpenMiniApp { url, title });
+                }
                 _ => {}
             }
         }
@@ -370,6 +391,7 @@ fn handle_menu_event(
     id: &str,
     window: &Window,
     webview: &WebView,
+    mini_app_popup: &mut Option<MiniAppPopup>,
     state: &Arc<Mutex<app::AppState>>,
     proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
     control_flow: &mut ControlFlow,
@@ -379,6 +401,7 @@ fn handle_menu_event(
 
     match id {
         FILE_QUIT | TRAY_QUIT => {
+            *mini_app_popup = None;
             save_config_now(state);
             *control_flow = ControlFlow::Exit;
         }
@@ -386,7 +409,7 @@ fn handle_menu_event(
             window.set_visible(false);
         }
         TRAY_SHOW => {
-            present_main_window(window);
+            present_window(window);
         }
         VIEW_ZOOM_IN | TRAY_ZOOM_IN => {
             let zoom = zoom_adjust(state, ZOOM_STEP);
@@ -462,6 +485,8 @@ fn handle_user_event(
     event: UserEvent,
     window: &Window,
     webview: &WebView,
+    mini_app_popup: &mut Option<MiniAppPopup>,
+    event_loop_target: &EventLoopWindowTarget<UserEvent>,
     state: &Arc<Mutex<app::AppState>>,
     proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
     taskbar_mgr: &mut taskbar::TaskbarManager,
@@ -488,7 +513,7 @@ fn handle_user_event(
         }
         UserEvent::InstallUpdate => {
             match updater.install() {
-                Ok(()) => { save_config_now(state); *control_flow = ControlFlow::Exit; }
+                Ok(()) => { *mini_app_popup = None; save_config_now(state); *control_flow = ControlFlow::Exit; }
                 Err(error) => updater.fail(error),
             }
             publish_update_status(updater, webview);
@@ -549,7 +574,7 @@ fn handle_user_event(
         }
         UserEvent::NotificationInteraction { id, target, activated } => {
             if activated {
-                present_main_window(window);
+                present_window(window);
             }
             if let Some(script) = build_notification_interaction_script(id.as_deref(), target.as_deref(), activated) {
                 let _ = webview.evaluate_script(&script);
@@ -571,7 +596,7 @@ fn handle_user_event(
             apply_zoom(webview, 1.0);
         }
         UserEvent::ShowWindow => {
-            present_main_window(window);
+            present_window(window);
         }
         UserEvent::HideWindow => {
             window.set_visible(false);
@@ -592,6 +617,11 @@ fn handle_user_event(
             if let Some(w_icon) = load_icon_for_variant(normalized) {
                 window.set_window_icon(Some(w_icon));
             }
+            if let Some(popup) = mini_app_popup.as_ref() {
+                if let Some(p_icon) = load_icon_for_variant(normalized) {
+                    popup.window.set_window_icon(Some(p_icon));
+                }
+            }
             if let Some(t) = tray {
                 let (rgba, w, h) = load_tray_icon_rgba_for_variant(normalized);
                 if let Ok(t_icon) = tray_icon::Icon::from_rgba(rgba, w, h) {
@@ -599,14 +629,18 @@ fn handle_user_event(
                 }
             }
         }
+        UserEvent::OpenMiniApp { url, title } => {
+            open_mini_app_popup(window, webview, mini_app_popup, event_loop_target, state, proxy, &url, title.as_deref());
+        }
         UserEvent::Quit => {
+            *mini_app_popup = None;
             save_config_now(state);
             *control_flow = ControlFlow::Exit;
         }
     }
 }
 
-fn present_main_window(window: &Window) {
+fn present_window(window: &Window) {
     window.set_visible(true);
     window.set_minimized(false);
     #[cfg(windows)]
@@ -636,6 +670,302 @@ fn present_main_window(window: &Window) {
         }
     }
     window.set_focus();
+}
+
+fn open_mini_app_popup(
+    main_window: &Window,
+    main_webview: &WebView,
+    mini_app_popup: &mut Option<MiniAppPopup>,
+    event_loop_target: &EventLoopWindowTarget<UserEvent>,
+    state: &Arc<Mutex<app::AppState>>,
+    proxy: &tao::event_loop::EventLoopProxy<UserEvent>,
+    url: &str,
+    title: Option<&str>,
+) {
+    let target_url = url.trim();
+    if !is_allowed_mini_app_url(target_url) {
+        warn!("Rejected unauthorized mini app URL: {}", url);
+        return;
+    }
+    let popup_title = title
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(app::ATTENDANCE_MINI_APP_TITLE);
+
+    if let Some(popup) = mini_app_popup.as_ref() {
+        popup.window.set_title(popup_title);
+        present_window(&popup.window);
+        if popup.webview.url().ok().is_some_and(|current| !is_allowed_mini_app_navigation(&current)) {
+            let _ = popup.webview.load_url(target_url);
+        }
+        return;
+    }
+
+    let scale = main_window.scale_factor();
+    let main_size: LogicalSize<u32> = main_window.inner_size().to_logical(scale);
+    let main_pos = main_window
+        .outer_position()
+        .ok()
+        .map(|p| p.to_logical::<i32>(scale))
+        .map(|p| (p.x, p.y))
+        .unwrap_or((100, 100));
+    let (mon_pos, mon_size) = main_window
+        .current_monitor()
+        .or_else(|| main_window.primary_monitor())
+        .map(|m| {
+            let ms = m.scale_factor();
+            let p: LogicalPosition<i32> = m.position().to_logical(ms);
+            let s: LogicalSize<u32> = m.size().to_logical(ms);
+            ((p.x, p.y), (s.width, s.height))
+        })
+        .unwrap_or(((0, 0), (1440, 900)));
+    let (x, y, width, height) = compute_mini_app_bounds(
+        main_pos,
+        (main_size.width, main_size.height),
+        mon_pos,
+        mon_size,
+    );
+
+    let icon_variant = {
+        let s = state.lock().unwrap();
+        normalize_icon_variant(s.config.app_icon.as_deref().unwrap_or("original")).to_string()
+    };
+
+    let popup_window = match WindowBuilder::new()
+        .with_title(popup_title)
+        .with_inner_size(LogicalSize::new(width, height))
+        .with_min_inner_size(LogicalSize::new(380u32, 540u32))
+        .with_position(LogicalPosition::new(x, y))
+        .with_window_icon(load_icon_for_variant(&icon_variant))
+        .build(event_loop_target)
+    {
+        Ok(win) => win,
+        Err(e) => {
+            error!("Failed to create mini app popup window: {:?}", e);
+            return;
+        }
+    };
+
+    let nav_proxy = proxy.clone();
+    let new_win_proxy = proxy.clone();
+    let mut builder = WebViewBuilder::new()
+        .with_url(target_url)
+        .with_background_color((248, 250, 252, 255))
+        .with_devtools(true)
+        .with_navigation_handler(move |nav_url: String| handle_mini_app_navigation(&nav_url, &nav_proxy))
+        .with_new_window_req_handler(move |new_url: String, _features| handle_mini_app_new_window(&new_url, &new_win_proxy));
+
+    #[cfg(windows)]
+    {
+        use wry::{WebViewBuilderExtWindows, WebViewExtWindows};
+        builder = builder.with_environment(main_webview.environment());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = main_webview;
+    }
+
+    match builder.build(&popup_window) {
+        Ok(popup_webview) => {
+            info!("Opened mini app popup: {}", target_url);
+            present_window(&popup_window);
+            *mini_app_popup = Some(MiniAppPopup {
+                webview: popup_webview,
+                window: popup_window,
+            });
+        }
+        Err(e) => {
+            error!("Failed to create mini app WebView: {:?}", e);
+            let _ = open::that(target_url);
+        }
+    }
+}
+
+fn compute_mini_app_bounds(
+    main_pos: (i32, i32),
+    main_size: (u32, u32),
+    monitor_pos: (i32, i32),
+    monitor_size: (u32, u32),
+) -> (i32, i32, u32, u32) {
+    let max_w = monitor_size.0.saturating_sub(40).max(380).min(monitor_size.0.max(380));
+    let max_h = monitor_size.1.saturating_sub(80).max(540).min(monitor_size.1.max(540));
+    let width = 540u32.min(max_w);
+    let height = 780u32.min(max_h);
+    let ideal_x = main_pos.0 + ((main_size.0 as i32 - width as i32) / 2);
+    let ideal_y = main_pos.1 + ((main_size.1 as i32 - height as i32) / 2);
+    let min_x = monitor_pos.0;
+    let min_y = monitor_pos.1;
+    let max_x = monitor_pos.0 + (monitor_size.0 as i32 - width as i32).max(0);
+    let max_y = monitor_pos.1 + (monitor_size.1 as i32 - height as i32).max(0);
+    (ideal_x.clamp(min_x, max_x), ideal_y.clamp(min_y, max_y), width, height)
+}
+
+fn extract_https_host(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    if trimmed.len() < 8 || !trimmed[..8].eq_ignore_ascii_case("https://") {
+        return None;
+    }
+    let rest = &trimmed[8..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty()
+        || authority.contains('@')
+        || authority.contains('\\')
+        || authority.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        return None;
+    }
+    let host = match authority.split_once(':') {
+        Some((h, port)) => {
+            if port.is_empty() || !port.chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            h
+        }
+        None => authority,
+    };
+    if host.is_empty() || host.starts_with('.') || host.ends_with('.') || host.contains("..") {
+        return None;
+    }
+    Some(host.to_ascii_lowercase())
+}
+
+fn host_matches(host: &str, domain: &str) -> bool {
+    host == domain || host.ends_with(&format!(".{domain}"))
+}
+
+fn is_allowed_mini_app_url(url: &str) -> bool {
+    extract_https_host(url).is_some_and(|host| host == app::ATTENDANCE_MINI_APP_HOST)
+}
+
+fn is_allowed_mini_app_navigation(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    if lower.starts_with("about:")
+        || lower.starts_with("data:")
+        || lower.starts_with("blob:")
+        || lower.starts_with("javascript:")
+    {
+        return true;
+    }
+    let Some(host) = extract_https_host(url) else {
+        return false;
+    };
+    if host_matches(&host, "thk-hd-hn.vn") {
+        return true;
+    }
+    [
+        "auth0.com",
+        "google.com",
+        "gstatic.com",
+        "googleapis.com",
+        "accounts.youtube.com",
+        "apple.com",
+        "appleid.apple.com",
+        "microsoft.com",
+        "microsoftonline.com",
+        "live.com",
+    ]
+    .iter()
+    .any(|domain| host_matches(&host, domain))
+}
+
+fn is_external_openable_scheme(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("mailto:")
+        || lower.starts_with("tel:")
+}
+
+fn handle_mini_app_navigation(url: &str, proxy: &tao::event_loop::EventLoopProxy<UserEvent>) -> bool {
+    if is_allowed_mini_app_navigation(url) {
+        return true;
+    }
+    if is_message_link(url) {
+        let _ = proxy.send_event(UserEvent::ShowWindow);
+        let _ = proxy.send_event(UserEvent::Navigate(url.to_string()));
+        return false;
+    }
+    if is_external_openable_scheme(url) {
+        info!("Mini app opening external link in default browser: {}", url);
+        let _ = open::that(url);
+    }
+    false
+}
+
+fn handle_mini_app_new_window(url: &str, proxy: &tao::event_loop::EventLoopProxy<UserEvent>) -> wry::NewWindowResponse {
+    if url.trim().eq_ignore_ascii_case("about:blank") || is_allowed_mini_app_navigation(url) {
+        return wry::NewWindowResponse::Allow;
+    }
+    if is_message_link(url) {
+        let _ = proxy.send_event(UserEvent::ShowWindow);
+        let _ = proxy.send_event(UserEvent::Navigate(url.to_string()));
+        return wry::NewWindowResponse::Deny;
+    }
+    if is_external_openable_scheme(url) {
+        let _ = open::that(url);
+    }
+    wry::NewWindowResponse::Deny
+}
+
+#[cfg(test)]
+mod mini_app_policy_tests {
+    use super::*;
+
+    #[test]
+    fn mini_app_entry_url_allows_only_exact_attendance_https_host() {
+        assert!(is_allowed_mini_app_url("https://attendance.thk-hd-hn.vn/"));
+        assert!(is_allowed_mini_app_url("https://attendance.thk-hd-hn.vn/requests?tab=leave"));
+        assert!(is_allowed_mini_app_url("HTTPS://ATTENDANCE.THK-HD-HN.VN/"));
+        assert!(!is_allowed_mini_app_url("http://attendance.thk-hd-hn.vn/"));
+        assert!(!is_allowed_mini_app_url("https://attendance.thk-hd-hn.vn.evil.test/"));
+        assert!(!is_allowed_mini_app_url("https://attendance.thk-hd-hn.vn@evil.test/"));
+        assert!(!is_allowed_mini_app_url("https://evil.test/?https://attendance.thk-hd-hn.vn/"));
+        assert!(!is_allowed_mini_app_url("https://sub.attendance.thk-hd-hn.vn/"));
+        assert!(!is_allowed_mini_app_url("javascript:alert(1)"));
+        assert!(!is_allowed_mini_app_url("file:///attendance.thk-hd-hn.vn"));
+        assert!(!is_allowed_mini_app_url(""));
+    }
+
+    #[test]
+    fn mini_app_navigation_allows_thk_and_sso_but_rejects_foreign_hosts() {
+        assert!(is_allowed_mini_app_navigation("https://attendance.thk-hd-hn.vn/auth/google/callback"));
+        assert!(is_allowed_mini_app_navigation("https://api.thk-hd-hn.vn/v1/auth"));
+        assert!(is_allowed_mini_app_navigation("https://accounts.google.com/o/oauth2/v2/auth"));
+        assert!(is_allowed_mini_app_navigation("https://accounts.youtube.com/accounts/SetSID"));
+        assert!(is_allowed_mini_app_navigation("about:blank"));
+        assert!(!is_allowed_mini_app_navigation("https://google.com.evil.test/"));
+        assert!(!is_allowed_mini_app_navigation("https://evil.test/"));
+        assert!(!is_allowed_mini_app_navigation("http://attendance.thk-hd-hn.vn/"));
+    }
+
+    #[test]
+    fn mini_app_bounds_center_over_main_window_and_clamp_to_small_screens() {
+        assert_eq!(
+            compute_mini_app_bounds((100, 50), (1200, 800), (0, 0), (1920, 1080)),
+            (430, 60, 540, 780)
+        );
+        // Small 1366x768 laptop screen clamps height cleanly inside monitor.
+        let (x, y, w, h) = compute_mini_app_bounds((0, 0), (1366, 768), (0, 0), (1366, 768));
+        assert_eq!(w, 540);
+        assert_eq!(h, 688);
+        assert!(x >= 0 && y >= 0 && x + w as i32 <= 1366 && y + h as i32 <= 768);
+    }
+
+    #[test]
+    fn ipc_message_deserializes_open_mini_app() {
+        let parsed: app::IpcMessage = serde_json::from_str(
+            r#"{"type":"OpenMiniApp","payload":{"url":"https://attendance.thk-hd-hn.vn/","title":"THK Quick Leave"}}"#,
+        )
+        .expect("OpenMiniApp IPC should parse");
+        match parsed {
+            app::IpcMessage::OpenMiniApp { url, title } => {
+                assert_eq!(url, "https://attendance.thk-hd-hn.vn/");
+                assert_eq!(title.as_deref(), Some("THK Quick Leave"));
+            }
+            other => panic!("Unexpected IPC variant: {:?}", other),
+        }
+    }
 }
 
 fn normalize_message_target(raw: Option<&str>) -> Option<String> {

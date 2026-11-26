@@ -4,7 +4,7 @@
 
 Windows sử dụng **Rust + WebView2**; macOS sử dụng **Swift + AppKit + WKWebView**. Ứng dụng dùng WebView của hệ thống, không đóng gói Electron hoặc Node.js để chạy.
 
-**Phiên bản trong mã nguồn: 2.26.18** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
+**Phiên bản trong mã nguồn: 2.26.19** · [Tải ứng dụng](https://github.com/mrbinh008/chatwork-rust/releases/latest) · [Lịch sử phát hành](https://github.com/mrbinh008/chatwork-rust/releases)
 
 ## Mục lục
 
@@ -108,21 +108,11 @@ Gõ `@` và một phần tên trong ô chat để mở danh sách gợi ý. Có 
 
 Nguồn thành viên gồm thành viên phòng và thành viên từ các team liên quan mà Chatwork cung cấp. Emoji sử dụng giao diện có sẵn của Chatwork.
 
-### 4. Mẫu nghỉ phép / báo bận
+### 4. Xin nghỉ phép / báo bận (Mini App Quick Leave)
 
-Bấm nút lịch để chọn loại yêu cầu, ngày nghỉ, giờ bắt đầu/kết thúc, lý do và các leader cần tag. Mỗi ngày có khoảng giờ riêng; có thể thêm từng ngày hoặc thêm cả khoảng ngày cùng giờ. Form hỗ trợ xem trước, sao chép, chèn vào ô chat và gửi.
+Bấm nút lịch trên thanh soạn tin (hoặc nhấn `Ctrl+Shift+L` / `Cmd+Shift+L`) để mở cửa sổ popup mini app **THK Quick Leave** (`https://attendance.thk-hd-hn.vn/`). Mini app chạy trong cửa sổ WebView riêng, giữ phiên đăng nhập trên thiết bị và hỗ trợ luồng đăng nhập SSO (Google Workspace) trực tiếp.
 
-Ví dụ nội dung được tạo:
-
-```text
-[info]
-- Request: PAID_LEAVE
-- Time: 08:00 - 17:00  20/11/2026
-- Reason: Personal matter
-[/info]
-```
-
-Theo mặc định, nút xuất hiện trong phòng có tên chứa `Attendance infor_THKHN`. Có thể thay đổi việc hiển thị trong Cài đặt.
+Theo mặc định, nút xuất hiện trong phòng có tên chứa `Attendance infor_THKHN`. Có thể thay đổi việc hiển thị hoặc gán phím tắt trong Cài đặt.
 
 ### 5. Mẫu Pull Request
 
